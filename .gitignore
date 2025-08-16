@@ -1,0 +1,21 @@
+# ESP-IDF build
+build/
+*.elf
+*.bin
+*.map
+*.pyc
+*.pyo
+__pycache__/
+*.log
+sdkconfig.old
+*.bak
+*.orig
+
+# VSCode & IDF plugin
+.vscode/
+idea/
+*.code-workspace
+
+# Python venv
+venv/
+.env/
