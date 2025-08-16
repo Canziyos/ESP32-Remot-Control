@@ -117,7 +117,6 @@ static void got_ip(void *arg, esp_event_base_t b, int32_t id, void *data) {
 
     errsrc_set(NULL);                    // "NONE"
     monitor_on_wifi_error(ERRSRC_NONE);  // reset failure streak
-    syscoord_control_path_ok("GotIP");   // Promote to NORMAL on healthy boot
 
     if (s_tcp_start_timer && !esp_timer_is_active(s_tcp_start_timer)) {
         ESP_LOGI(TAG, "Scheduling TCP server start in 800 ms …");

@@ -36,6 +36,8 @@ void syscoord_on_no_control_path(void);
 /* Read current coordination mode (use in commands.c to gate risky commands). */
 sc_mode_t syscoord_get_mode(void);
 
+void syscoord_mark_tcp_authed(void);
+
 #ifdef __cplusplus
 }
 #endif

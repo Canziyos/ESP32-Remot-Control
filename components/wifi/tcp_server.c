@@ -57,7 +57,6 @@ static void client_task(void *arg) {
         /* If this session just became authed and we haven't notified yet this boot, mark control OK. */
         if (ctx.authed && !s_authed_notified_this_boot) {
             s_authed_notified_this_boot = true;
-            syscoord_control_path_ok("TCP_AUTH");
         }
     }
 

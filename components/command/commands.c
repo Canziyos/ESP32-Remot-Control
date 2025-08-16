@@ -11,10 +11,10 @@
 #include "wifi.h"            // wifi_set_credentials
 
 /* ---- helpers ---- */
-static inline void *stream_user(struct cmd_ctx_t *ctx) {
+static inline void *stream_user(cmd_ctx_t *ctx) {
     return ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd;
 }
-static inline void reply(struct cmd_ctx_t *ctx, const char *s) {
+static inline void reply(cmd_ctx_t *ctx, const char *s) {
     ctx->write(s, (int)strlen(s), stream_user(ctx));
 }
 
@@ -40,6 +40,7 @@ static void cmd_auth(const char *args, cmd_ctx_t *ctx) {
         ctx->authed = true;
         // Only TCP/Wi-Fi establishes the control path (cancels rollback, hides BLE).
         if (!ctx->is_ble) {
+            syscoord_mark_tcp_authed();
             syscoord_control_path_ok("TCP");
         }
         reply(ctx, "OK\n");
@@ -96,10 +97,8 @@ static void cmd_errsrc(const char *args, cmd_ctx_t *ctx) {
     sc_mode_t m = syscoord_get_mode();
 
     char line[96];
-    int n = snprintf(line, sizeof(line), "mode=%s errsrc=%s\n", mode_to_str(m), err);
-    if (n < 0) n = 0;
-    if (n > (int)sizeof(line)) n = (int)sizeof(line);
-    ctx->write(line, n, stream_user(ctx));
+    (void)snprintf(line, sizeof(line), "mode=%s errsrc=%s\n", mode_to_str(m), err);
+    reply(ctx, line);
 }
 
 /* ---- Command Table ---- */
