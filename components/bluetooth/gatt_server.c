@@ -6,25 +6,25 @@
 #include <strings.h>
 #include <stdbool.h>
 #include <stdio.h>
-
+#include "commands.h"
 #include "command.h"
 #include "gatt_server.h"
 #include "ble_fallback.h"
-#include "alerts.h"     // alert_record_t
+#include "alerts.h" 
 #include "syscoord.h"
 #include "errsrc.h"
 
 static const char *TAG = "GATT";
 
-/* ------------ Auth state for BLE console ------------ */
+/* Auth state for BLE console */
 static bool app_authed_ble = false;
 void gatt_server_set_app_authed(bool v) { app_authed_ble = v; }
 
-/* ------------ ERRSRC notify control ------------ */
-static bool errsrc_notify_enabled = false;   // CCC state for ERRSRC
-static char s_last_errsrc_sent[64] = "";     // last notified value
+/* ERRSRC notify control */
+static bool errsrc_notify_enabled = false;   // CCC state for ERRSRC.
+static char s_last_errsrc_sent[64] = "";     // last notified value.
 
-/* ------------ UUIDs ------------ */
+/* UUIDs */
 // ALERT characteristic UUID: efbe0500-fbfb-fbfb-fb4b-494545434956
 static const uint8_t ALERT_UUID[16] = {
     0x56,0x49,0x43,0x45,0x45,0x49,0x4B,0xFB,0xFB,0xFB,0xFB,0xFB,0x00,0x05,0xBE,0xEF
@@ -48,16 +48,16 @@ static const uint8_t ERRSRC_UUID[16] = {
 };
 
 /* Properties */
-static uint8_t rx_props     = ESP_GATT_CHAR_PROP_BIT_WRITE_NR | ESP_GATT_CHAR_PROP_BIT_WRITE;
-static uint8_t tx_props     = ESP_GATT_CHAR_PROP_BIT_NOTIFY   | ESP_GATT_CHAR_PROP_BIT_READ;
-static uint8_t wifi_props   = ESP_GATT_CHAR_PROP_BIT_WRITE;
-static uint8_t errsrc_props = ESP_GATT_CHAR_PROP_BIT_READ     | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-static uint8_t alert_props  = ESP_GATT_CHAR_PROP_BIT_READ     | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-static bool    alert_notify_enabled = false;
+static uint8_t rx_props = ESP_GATT_CHAR_PROP_BIT_WRITE_NR | ESP_GATT_CHAR_PROP_BIT_WRITE;
+static uint8_t tx_props = ESP_GATT_CHAR_PROP_BIT_NOTIFY | ESP_GATT_CHAR_PROP_BIT_READ;
+static uint8_t wifi_props = ESP_GATT_CHAR_PROP_BIT_WRITE;
+static uint8_t errsrc_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static uint8_t alert_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static bool alert_notify_enabled = false;
 
 /* 16-bit helper UUIDs */
-static uint16_t primary_service_uuid         = ESP_GATT_UUID_PRI_SERVICE;
-static uint16_t character_declaration_uuid   = ESP_GATT_UUID_CHAR_DECLARE;
+static uint16_t primary_service_uuid = ESP_GATT_UUID_PRI_SERVICE;
+static uint16_t character_declaration_uuid = ESP_GATT_UUID_CHAR_DECLARE;
 static uint16_t character_client_config_uuid = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
 
 /* Attribute table indices */
@@ -80,19 +80,19 @@ enum {
 };
 
 /* Handles & state */
-static uint16_t     gatt_handle_table[HRS_IDX_NB];
-static esp_gatt_if_t g_gatts_if   = ESP_GATT_IF_NONE;
-static uint16_t      g_conn_id    = 0xFFFF;
-static bool          tx_notify_enabled = false;
+static uint16_t gatt_handle_table[HRS_IDX_NB];
+static esp_gatt_if_t g_gatts_if = ESP_GATT_IF_NONE;
+static uint16_t g_conn_id = 0xFFFF;
+static bool tx_notify_enabled = false;
 
 /* Negotiated MTU payload size (ATT_MTU - 3). Default 20 for MTU 23. */
 static uint16_t g_mtu_payload = 20;
 
 /* each CCCD its own 2-byte storage. */
-static uint8_t cccd_tx_val[2]    = {0x00, 0x00};
-static uint8_t cccd_err_val[2]   = {0x00, 0x00};
+static uint8_t cccd_tx_val[2] = {0x00, 0x00};
+static uint8_t cccd_err_val[2] = {0x00, 0x00};
 static uint8_t cccd_alert_val[2] = {0x00, 0x00};
-static char    last_errsrc[64]   = "NONE";
+static char last_errsrc[64] = "NONE";
 
 /* ------------ Helpers ------------ */
 
@@ -147,14 +147,14 @@ void gatt_server_send_status(const char *s) {
     size_t len = slen;
 
     uint16_t max_chunk = g_mtu_payload;
-    if (max_chunk < 1)   max_chunk = 1;
+    if (max_chunk < 1)  max_chunk = 1;
     if (max_chunk > 180) max_chunk = 180;
 
     while (len) {
         uint16_t chunk = (len > max_chunk) ? max_chunk : (uint16_t)len;
         esp_ble_gatts_send_indicate(g_gatts_if, g_conn_id, gatt_handle_table[IDX_TX_VAL],
                                     chunk, (uint8_t *)p, false /* no confirm */);
-        p   += chunk;
+        p += chunk;
         len -= chunk;
     }
     const uint8_t nl = '\n';
@@ -171,7 +171,7 @@ void gatt_alert_notify(const alert_record_t *rec)
     int n = snprintf(line, sizeof(line), "ALERT seq=%u code=%u %s",
                      (unsigned)rec->seq, (unsigned)rec->code, rec->detail);
     if (n < 0) n = 0;
-    /* Make sure we don't claim more than the actual buffer contents (exclude NUL). */
+    /* Make sure we don't claim more than the actual buffer contents (NUL excluded). */
     size_t used = strnlen(line, sizeof(line));
 
     /* Keep the ALERT characteristic value up to date for READs. */
@@ -284,7 +284,7 @@ static void on_wifi_cred_write(const uint8_t *data, uint16_t len) {
     app_authed_ble = ctx.authed;  /* in case auth state changes */
 }
 
-/* ------------ GATTS event handler ------------ */
+/* GATTS event handler */
 static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
                                 esp_ble_gatts_cb_param_t *param) {
     switch (event) {
@@ -369,7 +369,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 
     case ESP_GATTS_START_EVT:
         ESP_LOGI(TAG, "Service started. Starting advertising.");
-        ble_start_advertising();   /* starts ONLY if lifeboat is enabled */
+        ble_start_advertising();   /* Only if lifeboat is enabled */
         break;
 
     case ESP_GATTS_MTU_EVT:
@@ -385,7 +385,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             if (!err) err = "NONE";
             esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_ERRSRC_VAL],
                                          strlen(err), (const uint8_t*)err);
-            ESP_LOGI(TAG, "ERRSRC read -> '%s'.", err);
+            ESP_LOGI(TAG, "ERRSRC read -> /'%s'.", err);
 
         } else if (param->read.handle == gatt_handle_table[IDX_ALERT_VAL]) {
             alert_record_t rec; alert_latest(&rec);

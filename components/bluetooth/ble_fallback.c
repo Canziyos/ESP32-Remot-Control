@@ -25,11 +25,11 @@ static const char *TAG = "BLE";
 static uint8_t s_adv_uuid[16];
 
 /* State */
-static bool s_stack_ready        = false;        // controller+bluedroid up
-static bool s_adv_ready          = false;        // adv payload configured
-static bool s_adv_running        = false;        // advertising currently on
-static bool s_connected          = false;        // link state
-static bool s_lifeboat_enabled   = false;        // policy gate from syscoord
+static bool s_stack_ready = false;       // controller+bluedroid up.
+static bool s_adv_ready = false;        // adv payload configured.
+static bool s_adv_running = false;       // advertising currently on.
+static bool s_connected = false;        // link state.
+static bool s_lifeboat_enabled = false;       // policy gate from syscoord
 static bool s_adv_start_deferred = false;
 
 /* Simple ADV watchdog to re-arm advertising if it ever stops while idle. */
@@ -40,11 +40,11 @@ static uint8_t s_adv_cfg_done = 0;
 #define ADV_CFG_FLAG      (1 << 0)
 #define SCAN_RSP_CFG_FLAG (1 << 1)
 static esp_ble_adv_params_t s_adv_params = {
-    .adv_int_min       = 0x20,                 // ~20 ms
-    .adv_int_max       = 0x40,                 // ~40 ms
-    .adv_type          = ADV_TYPE_IND,
-    .own_addr_type     = BLE_ADDR_TYPE_PUBLIC,
-    .channel_map       = ADV_CHNL_ALL,
+    .adv_int_min = 0x20,                 // ~20 ms
+    .adv_int_max = 0x40,                 // ~40 ms
+    .adv_type = ADV_TYPE_IND,
+    .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
+    .channel_map = ADV_CHNL_ALL,
     .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
 };
 
@@ -57,7 +57,7 @@ static void ble_worker(void *arg) {
         if (xQueueReceive(s_ble_q, &ev, portMAX_DELAY) == pdTRUE) {
             switch (ev) {
             case BLE_EVT_ADV_KICK:
-                // Do all heavy GAP here, never in timer callback.
+                // All heavy GAP here.
                 start_adv_now();
                 break;
             default:
@@ -67,7 +67,7 @@ static void ble_worker(void *arg) {
     }
 }
 
-// Small helper to enqueue from any context that is NOT an ISR.
+// Small helper to enqueue from any context that is not an ISR.
 // (FreeRTOS software timers run in a normal task, not an ISR.)
 static inline void ble_post(ble_evt_t ev) {
     if (s_ble_q) (void)xQueueSend(s_ble_q, &ev, 0);
@@ -82,7 +82,7 @@ void ble_stop_advertising(void) {
     }
 }
 
-/* Lifeboat visibility – ONLY syscoord should call this. */
+/* Lifeboat visibility – Only syscoord should call this. */
 void ble_lifeboat_set(bool enable) {
     s_lifeboat_enabled = enable;
     ESP_LOGI(TAG, "lifeboat: %s", enable ? "ENABLED" : "DISABLED");
@@ -119,7 +119,7 @@ static void start_adv_now(void) {
     if (s_connected) return; // no advertising while connected
 
     esp_err_t e = esp_ble_gap_start_advertising(&s_adv_params);
-    if (e == ESP_ERR_INVALID_STATE) {          // if already running/busy, bounce once
+    if (e == ESP_ERR_INVALID_STATE) {          // if already running/busy, bounce once.
         (void)esp_ble_gap_stop_advertising();
         e = esp_ble_gap_start_advertising(&s_adv_params);
     }
@@ -128,8 +128,8 @@ static void start_adv_now(void) {
     }
 }
 
-/* Watchdog: if not connected and not currently advertising, request a kick
- * (only if lifeboat on). Never call GAP here; just post to the worker. */
+/* Watchdog: if not connected and not currently advertising, request a kick.
+ * (only if lifeboat on). post to the worker. */
 static void adv_watch_cb(TimerHandle_t t) {
     (void)t;
     if (s_lifeboat_enabled && !s_connected && s_adv_ready && s_stack_ready && !s_adv_running) {
@@ -140,7 +140,7 @@ static void adv_watch_cb(TimerHandle_t t) {
 
 /* Public: called from gatt_server.c (ESP_GATTS_START_EVT). */
 void ble_start_advertising(void) {
-    // Respect policy: only advertise if lifeboat is enabled.
+    // only advertise if lifeboat is enabled.
     if (!s_lifeboat_enabled) {
         ESP_LOGI(TAG, "ble_start_advertising ignored (lifeboat disabled).");
         return;
@@ -150,7 +150,7 @@ void ble_start_advertising(void) {
         ESP_LOGI(TAG, "ADV requested but stack/payload not ready — deferring.");
         return;
     }
-    ble_post(BLE_EVT_ADV_KICK);               // ensure GAP call happens in worker
+    ble_post(BLE_EVT_ADV_KICK);               // eto nsure GAP call happens in worker
 }
 
 /* Let GATT tell us about link state (call on CONNECT/DISCONNECT). */

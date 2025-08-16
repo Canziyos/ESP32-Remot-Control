@@ -4,12 +4,12 @@ from typing import Optional
 
 # ---------- Optional BLE ----------
 try:
-    from bleak import BleakClient, BleakScanner  # type: ignore
-    from bleak.backends.device import BLEDevice  # type: ignore
+    from bleak import BleakClient, BleakScanner
+    from bleak.backends.device import BLEDevice
     BLE_AVAILABLE = True
 except Exception:
     BLE_AVAILABLE = False
-    BLEDevice = object  # type: ignore
+    BLEDevice = object
 
 # ---------- Config ----------
 ADDR   = os.getenv("LOPY_ADDR",  "192.168.10.125")
@@ -267,7 +267,7 @@ async def ble_session() -> bool:
             if _is_wifi_ok(msg):
                 wifi_ok_event.set()
 
-    async with BleakClient(dev) as client:
+    async with BleakClient(dev, timeout=25.0 ) as client:
         print(f"[BLE] Connected to {getattr(dev, 'address', 'unknown')} ({getattr(dev, 'name', '')}).")
 
         svcs = await _wait_for_services(client)
