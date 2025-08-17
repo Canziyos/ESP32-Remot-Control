@@ -1,6 +1,6 @@
 import os, sys, socket, struct, zlib, pathlib, time, asyncio
 from typing import Optional
-
+from asyncio import CancelledError
 # ---------- Optional BLE ----------
 try:
     from bleak import BleakClient, BleakScanner
@@ -39,6 +39,18 @@ POST_OTA_TCP_ONLY_WINDOW_S = float(os.getenv("LOPY_TCP_ONLY_WINDOW_S", "3.0"))
 BLE_QUICK_SCAN_S = float(os.getenv("LOPY_BLE_QUICK_SCAN_S", "1.8"))
 
 # ---------- Helpers ----------
+async def _stop_notify_quiet(client, *uuids):
+    for u in uuids:
+        if not u:
+            continue
+        try:
+            await client.stop_notify(u)
+        except CancelledError:
+            # WinRT/bleak sometimes cancels stop_notify when tearing down
+            pass
+        except Exception:
+            pass
+
 def _is_wifi_ok(msg: str) -> bool:
     m = msg.strip().lower()
     if m == "none":         # ignore bare ERRSRC “NONE”
@@ -465,19 +477,8 @@ async def ble_session() -> bool:
                     try:
                         await asyncio.wait_for(wifi_ok_event.wait(), timeout=20.0)
                         print("[BLE] Wi-Fi is up. Switching to TCP...")
-                        # Let the context manager handle the disconnect; just stop notifies.
-                        try:
-                            if notify_ok:
-                                try: await client.stop_notify(tx_uuid)
-                                except Exception: pass
-                                try:
-                                    if err_uuid: await client.stop_notify(err_uuid)
-                                except Exception: pass
-                                try:
-                                    if alert_uuid: await client.stop_notify(alert_uuid)
-                                except Exception: pass
-                        except Exception:
-                            pass
+                        if notify_ok:
+                            await _stop_notify_quiet(client, tx_uuid, err_uuid, alert_uuid)
                         return True
 
                     except asyncio.TimeoutError:
@@ -510,16 +511,8 @@ async def ble_session() -> bool:
                 break
 
         # Best-effort cleanup on exit.
-        try:
-            if notify_ok:
-                await client.stop_notify(tx_uuid)
-                try: await client.stop_notify(err_uuid)
-                except Exception: pass
-                try:
-                    if alert_uuid: await client.stop_notify(alert_uuid)
-                except Exception: pass
-        except Exception:
-            pass
+        if notify_ok:
+            await _stop_notify_quiet(client, tx_uuid, err_uuid, alert_uuid)
 
     return False
 
@@ -563,11 +556,9 @@ def tcp_session():
         s = connect_and_auth()
         if s:
             break
-
         wifi_came_up = asyncio.run(ble_session())
         if not wifi_came_up:
             return
-
         for _ in range(10):
             s = connect_and_auth(print_banner=False)
             if s:
@@ -578,104 +569,102 @@ def tcp_session():
             break
         print("[warn] Wi-Fi said OK but TCP still not reachable; staying in BLE.")
 
-    # ----- TCP REPL with keepalive ---- #
     print("LoPy> ", end="", flush=True)
     last_ping = time.time()
-    first_ping_at = time.time() + 8.0   # delay initial keepalive after (re)connect/OTA.
-    win_buf: list[str] = []  # for Windows non-blocking line assembly.
+    first_ping_at = time.time() + 8.0
+    win_buf: list[str] = []
 
-    while True:
-        # 1) Non-blocking read of a line.
-        line: Optional[str]
-        if os.name == "nt":
-            line = _readline_nonblock_windows(win_buf, slice_sec=0.2)
-        else:
-            line = _readline_nonblock_posix(slice_sec=0.2)
-
-        # 2) Periodic keepalive while idle (but not too soon after connect).
-        now = time.time()
-        if now >= first_ping_at and (now - last_ping) >= 3.0 and not line:
-            last_ping = now
-            ok = send_ping(s)
-            if not ok:
-                s2 = try_reconnect("keepalive failed")
-                if not s2:
-                    # user either stayed in BLE or nothing improved.
-                    return
-                s = s2
-                print("LoPy> ", end="", flush=True)
-                continue
-
-        # 3) If no line yet, keep looping.
-        if line is None:
-            continue
-
-        # Got a line.
-        line = line.strip()
-        if not line:
-            print("LoPy> ", end="", flush=True)
-            continue
-
-        low = line.lower()
-        if low in ("/q", "/quit", "exit"):
-            break
-
-        if (low.startswith("/ota ") or low.startswith("ota ")):
-            path_str = line.split(None, 1)[1] if len(line.split(None, 1)) == 2 else ""
-            bin_path = pathlib.Path(path_str)
-            if not bin_path.is_file():
-                print("[err] file not found.")
-                print("LoPy> ", end="", flush=True)
-                continue
-
-            s_new = ota_tcp(s, bin_path)
-            if s_new:
-                s = s_new
-                print("[OTA] Reconnected over TCP.")
-                print("LoPy> ", end="", flush=True)
+    try:
+        while True:
+            if os.name == "nt":
+                line = _readline_nonblock_windows(win_buf, slice_sec=0.2)
             else:
-                print("[OTA] TCP didn’t come back. Trying BLE fallback...")
-                wifi_came_up = asyncio.run(ble_session())
-                if wifi_came_up:
-                    s = connect_and_auth() or s
-                    if not s:
-                        print("[warn] Still no TCP after BLE recovery.")
-                        break
+                line = _readline_nonblock_posix(slice_sec=0.2)
+
+            now = time.time()
+            if now >= first_ping_at and (now - last_ping) >= 3.0 and not line:
+                last_ping = now
+                ok = send_ping(s)
+                if not ok:
+                    s2 = try_reconnect("keepalive failed")
+                    if not s2:
+                        return
+                    s = s2
+                    print("LoPy> ", end="", flush=True)
+                    continue
+
+            if line is None:
+                continue
+
+            line = line.strip()
+            if not line:
+                print("LoPy> ", end="", flush=True)
+                continue
+
+            low = line.lower()
+            if low in ("/q", "/quit", "exit"):
+                break
+
+            if (low.startswith("/ota ") or low.startswith("ota ")):
+                path_str = line.split(None, 1)[1] if len(line.split(None, 1)) == 2 else ""
+                bin_path = pathlib.Path(path_str)
+                if not bin_path.is_file():
+                    print("[err] file not found.")
+                    print("LoPy> ", end="", flush=True)
+                    continue
+                s_new = ota_tcp(s, bin_path)
+                if s_new:
+                    s = s_new
+                    print("[OTA] Reconnected over TCP.")
                     print("LoPy> ", end="", flush=True)
                 else:
-                    print("[OTA] BLE couldn’t recover. You can keep using BLE or power-cycle.")
-                    break
-            continue
+                    print("[OTA] TCP didn’t come back. Trying BLE fallback...")
+                    wifi_came_up = asyncio.run(ble_session())
+                    if wifi_came_up:
+                        s = connect_and_auth() or s
+                        if not s:
+                            print("[warn] Still no TCP after BLE recovery.")
+                            break
+                        print("LoPy> ", end="", flush=True)
+                    else:
+                        print("[OTA] BLE couldn’t recover. You can keep using BLE or power-cycle.")
+                        break
+                continue
 
-        if low.startswith("/setwifi ") or low.startswith("setwifi "):
+            if low.startswith("/setwifi ") or low.startswith("setwifi "):
+                try:
+                    send_line(s, line.strip())
+                except OSError as e:
+                    s2 = try_reconnect(str(e))
+                    if not s2:
+                        continue
+                    s = s2
+                    send_line(s, line.strip())
+                print("LoPy> ", end="", flush=True)
+                continue
+
             try:
-                send_line(s, line.strip())
+                send_line(s, line)
             except OSError as e:
                 s2 = try_reconnect(str(e))
                 if not s2:
                     continue
                 s = s2
-                send_line(s, line.strip())
+                send_line(s, line)
             print("LoPy> ", end="", flush=True)
-            continue
 
-        # Regular command.
+    except KeyboardInterrupt:
+        print("\n[info] Session interrupted by user.")
+    finally:
         try:
-            send_line(s, line)
-        except OSError as e:
-            s2 = try_reconnect(str(e))
-            if not s2:
-                continue
-            s = s2
-            send_line(s, line)
+            s.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            pass
+        try:
+            s.close()
+        except Exception:
+            pass
 
-        print("LoPy> ", end="", flush=True)
-
-    try:
-        s.shutdown(socket.SHUT_RDWR)
-        s.close()
-    except Exception:
-        pass
 ########
 # Main #
 ########
@@ -683,4 +672,9 @@ def main():
     tcp_session()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[info] Session interrupted by user.")
+    finally:
+        print("[info] Bye.")

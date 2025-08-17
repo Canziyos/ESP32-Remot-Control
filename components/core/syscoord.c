@@ -6,7 +6,7 @@
 #include <string.h>          // strcmp
 #include "esp_ota_ops.h"
 #include "esp_log.h"
-
+#include "esp_partition.h"
 #include "syscoord.h"
 #include "monitor.h"         // monitor_set_timeout_cb, health_monitor_start
 #include "alerts.h"
@@ -61,6 +61,7 @@ void syscoord_control_path_ok(const char *source) {
                  source ? source : "NULL");
         return;
     }
+    health_monitor_control_ok(source); 
     set_mode(SC_MODE_NORMAL);
 }
 

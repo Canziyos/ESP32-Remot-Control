@@ -1,7 +1,9 @@
 #pragma once
 #include <stdbool.h>
 #include <stddef.h>
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 /* Forward-declare the tagged struct from command.h */
 struct cmd_ctx_t;
 
@@ -17,3 +19,6 @@ typedef struct {
 /* Command table (defined in commands.c) */
 extern const cmd_entry_t CMDS[];
 extern const size_t      CMD_COUNT;
+#ifdef __cplusplus
+}
+#endif
