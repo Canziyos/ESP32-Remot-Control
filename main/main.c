@@ -1,14 +1,16 @@
 // main/main.c
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"        // <-- add this.
+#include "esp_partition.h"
 #include "syscoord.h"
 #include "command_bus.h"
 #include "led.h"
 #include "wifi.h"
-
+#include "bootflag.h"
 
 void app_main(void) {
-    // One-time NVS init (with erase-on-upgrade fallback)
+    // One-time NVS init (with erase-on-upgrade fallback).
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -17,10 +19,17 @@ void app_main(void) {
         ESP_ERROR_CHECK(err);
     }
 
+    // If we booted the factory image, clear any stale post-rollback latch.
+    const esp_partition_t *run = esp_ota_get_running_partition();
+    if (run && run->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY) {
+        bootflag_set_post_rollback(false);
+    }
+
     syscoord_init();
     cmd_bus_init();
     led_task_start();
 
-    // Primary path; BLE is owned by syscoord and will be started only in RECOVERY.
-    wifi_start("my_password", "my_something");
+    // Use saved credentials from NVS.
+    // wifi_start("YourSSID", "YourPassword");
+    wifi_start(NULL, NULL);
 }
