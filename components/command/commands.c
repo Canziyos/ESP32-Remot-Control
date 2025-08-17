@@ -9,7 +9,7 @@
 #include "esp_log.h"
 #include "errsrc.h"
 #include "wifi.h"            // wifi_set_credentials
-
+#include "bootflag.h"
 /* ---- helpers ---- */
 static inline void *stream_user(cmd_ctx_t *ctx) {
     return ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd;
@@ -42,6 +42,7 @@ static void cmd_auth(const char *args, cmd_ctx_t *ctx) {
         if (!ctx->is_ble) {
             syscoord_mark_tcp_authed();
             syscoord_control_path_ok("TCP");
+            bootflag_set_post_rollback(false);
         }
         reply(ctx, "OK\n");
     } else {
