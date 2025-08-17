@@ -13,12 +13,10 @@
 #include "alerts.h" 
 #include "syscoord.h"
 #include "errsrc.h"
+#include "ble_cmd.h"
 
 static const char *TAG = "GATT";
-
-/* Auth state for BLE console */
-static bool app_authed_ble = false;
-void gatt_server_set_app_authed(bool v) { app_authed_ble = v; }
+static ble_cmd_t *s_cli = NULL; 
 
 /* ERRSRC notify control */
 static bool errsrc_notify_enabled = false;   // CCC state for ERRSRC.
@@ -95,13 +93,6 @@ static uint8_t cccd_alert_val[2] = {0x00, 0x00};
 static char last_errsrc[64] = "NONE";
 
 /* ------------ Helpers ------------ */
-
-/* Write helper: route console replies to TX. */
-static int ble_write_cb(const void *buf, int len, void *user) {
-    (void)user;
-    gatt_server_send_status((const char *)buf);
-    return len;
-}
 
 static void errsrc_notify_if_changed(const char *current_err)
 {
@@ -188,44 +179,6 @@ void gatt_alert_notify(const alert_record_t *rec)
     }
 }
 
-/* Incoming console lines on RX characteristic */
-static void on_rx_write(const uint8_t *data, uint16_t len) {
-    static char linebuf[600];
-    if (!data || !len) return;
-
-    if (len >= sizeof(linebuf)) len = sizeof(linebuf) - 1;
-    memcpy(linebuf, data, len);
-    linebuf[len] = '\0';
-
-    char *s = linebuf, *nl;
-    while ((nl = strchr(s, '\n'))) {
-        *nl = '\0';
-        if (*s) {
-            cmd_ctx_t ctx = {
-                .authed   = app_authed_ble,
-                .is_ble   = true,
-                .tcp_fd   = -1,
-                .ble_link = NULL,
-                .write    = ble_write_cb
-            };
-            cmd_dispatch_line(s, strlen(s), &ctx);
-            app_authed_ble = ctx.authed;
-        }
-        s = nl + 1;
-    }
-    if (*s) {
-        cmd_ctx_t ctx = {
-            .authed   = app_authed_ble,
-            .is_ble   = true,
-            .tcp_fd   = -1,
-            .ble_link = NULL,
-            .write    = ble_write_cb
-        };
-        cmd_dispatch_line(s, strlen(s), &ctx);
-        app_authed_ble = ctx.authed;
-    }
-}
-
 /* Notify ERRSRC changes via subscription */
 void gatt_server_notify_errsrc(const char *err)
 {
@@ -273,15 +226,11 @@ static void on_wifi_cred_write(const uint8_t *data, uint16_t len) {
     if (n < 0) n = 0;
     if (n >= (int)sizeof(cmdline)) cmdline[sizeof(cmdline)-1] = '\0';
 
-    cmd_ctx_t ctx = {
-        .authed   = app_authed_ble,
-        .is_ble   = true,
-        .tcp_fd   = -1,
-        .ble_link = NULL,
-        .write    = ble_write_cb
-    };
-    cmd_dispatch_line(cmdline, strlen(cmdline), &ctx);
-    app_authed_ble = ctx.authed;  /* in case auth state changes */
+    if (s_cli) {
+        size_t L = strnlen(cmdline, sizeof(cmdline));
+        if (L < sizeof(cmdline) - 1) cmdline[L++] = '\n';   // line terminator.
+        ble_cmd_on_rx(s_cli, (const uint8_t*)cmdline, (uint16_t)L);
+    }
 }
 
 /* GATTS event handler */
@@ -294,14 +243,13 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         esp_ble_gatts_create_attr_tab((esp_gatts_attr_db_t[]){
             [IDX_SVC] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&primary_service_uuid, ESP_GATT_PERM_READ,
-              ESP_UUID_LEN_128, ESP_UUID_LEN_128, (uint8_t *)SERVICE_UUID} },
+                sizeof(SERVICE_UUID), sizeof(SERVICE_UUID), (uint8_t *)SERVICE_UUID} },
 
             [IDX_RX_CHAR] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-              sizeof(uint8_t), sizeof(uint8_t), &rx_props} },
+                sizeof(uint8_t), sizeof(uint8_t), &rx_props} },
             [IDX_RX_VAL] = { {ESP_GATT_AUTO_RSP},
-            {ESP_UUID_LEN_128, (uint8_t *)RX_UUID, ESP_GATT_PERM_WRITE,
-              512, 0, NULL} },
+            {ESP_UUID_LEN_128, (uint8_t *)RX_UUID, ESP_GATT_PERM_WRITE, 512, 0, NULL} },
 
             [IDX_TX_CHAR] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
@@ -404,23 +352,42 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         break;
 
     case ESP_GATTS_CONNECT_EVT:
+        g_conn_id = param->connect.conn_id;
         syscoord_on_ble_state(true);
         ble_set_connected(true);
-        break;
+        if (!s_cli) {
+            s_cli = ble_cmd_create();
+        }
+        ble_cmd_on_connect(s_cli, g_gatts_if, g_conn_id,
+                           gatt_handle_table[IDX_TX_VAL]);  // TX notify handle
+     break;
 
     case ESP_GATTS_DISCONNECT_EVT:
         syscoord_on_ble_state(false);
         ble_set_connected(false);
+        if (s_cli) {
+            ble_cmd_on_disconnect(s_cli);
+            // re-create per new connection?
+            // ble_cmd_destroy(s_cli); s_cli = NULL;
+        }
+        g_conn_id = 0xFFFF; 
         break;
 
     case ESP_GATTS_WRITE_EVT:
         if (param->write.handle == gatt_handle_table[IDX_RX_VAL]) {
-            on_rx_write(param->write.value, param->write.len);
+            // Console RX over BLE -> bridge to command parser
+            if (s_cli) {
+                ble_cmd_on_rx(s_cli, param->write.value, param->write.len);
+            } else {
+                ESP_LOGW(TAG, "RX write before CLI init");
+            }
 
         } else if (param->write.handle == gatt_handle_table[IDX_WIFI_VAL]) {
+            // Special Wi-Fi creds characteristic
             on_wifi_cred_write(param->write.value, param->write.len);
 
         } else if (param->write.handle == gatt_handle_table[IDX_TX_CCC]) {
+            // TX notify CCC
             if (param->write.len == 2) {
                 uint16_t cfg = param->write.value[0] | (param->write.value[1] << 8);
                 tx_notify_enabled = (cfg & 0x0001) != 0;
@@ -428,26 +395,27 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             }
 
         } else if (param->write.handle == gatt_handle_table[IDX_ERRSRC_CCC]) {
+            // ERRSRC notify CCC
             if (param->write.len == 2) {
                 uint16_t cfg = param->write.value[0] | (param->write.value[1] << 8);
                 bool new_enabled = (cfg & 0x0001) != 0;
                 errsrc_notify_enabled = new_enabled;
                 ESP_LOGI(TAG, "ERRSRC notify %s.", new_enabled ? "ENABLED" : "DISABLED");
-
                 if (new_enabled) {
-                    s_last_errsrc_sent[0] = '\0';       /* force first push */
+                    s_last_errsrc_sent[0] = '\0'; // force first push
                     errsrc_notify_if_changed(errsrc_get());
                 }
             }
 
         } else if (param->write.handle == gatt_handle_table[IDX_ALERT_CCC]) {
+            // ALERT notify CCC
             if (param->write.len == 2) {
                 uint16_t cfg = param->write.value[0] | (param->write.value[1] << 8);
                 alert_notify_enabled = (cfg & 0x0001) != 0;
                 ESP_LOGI(TAG, "ALERT notify %s.", alert_notify_enabled ? "ENABLED" : "DISABLED");
                 if (alert_notify_enabled) {
                     alert_record_t snap; alert_latest(&snap);
-                    gatt_alert_notify(&snap);   /* send one snapshot now */
+                    gatt_alert_notify(&snap); // send one snapshot now
                 }
             }
         }
