@@ -166,7 +166,7 @@ def try_reconnect(reason: str) -> Optional[socket.socket]:
 def send_ping(sock: socket.socket) -> bool:
     try:
         sock.sendall(b"PING\n")
-        reply = _recvline(sock, timeout=2.0)
+        reply = _recvline(sock, timeout=5.0)
         return reply.upper() == "PONG"
     except Exception:
         return False
