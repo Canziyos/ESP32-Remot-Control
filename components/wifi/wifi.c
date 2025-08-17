@@ -12,7 +12,9 @@
 #include "tcp_server.h"
 #include "syscoord.h"
 #include "errsrc.h"
-#include "monitor.h"   // NEW: event-driven health escalation
+#include "monitor.h"   // event-driven health escalation
+#include "lwip/ip4_addr.h"  // ip4addr_ntoa_r
+#include "gatt_server.h"
 
 static const char *TAG = "WIFI";
 static bool ota_verified = false;
@@ -87,10 +89,19 @@ static const char *wifi_event_name(int32_t id) {
     }
 }
 
-/* --- IP acquired --- */
-static void got_ip(void *arg, esp_event_base_t b, int32_t id, void *data) {
-    (void)arg; (void)b; (void)id;
+// got_ip handler
+static void got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    (void)arg; (void)base; (void)id;
     ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
+
+    char ip[16];
+    // no type fights, just print it
+    snprintf(ip, sizeof(ip), IPSTR, IP2STR(&ev->ip_info.ip));
+
+    char line[64];
+    int n = snprintf(line, sizeof(line), "WIFI: GOT IP ip=%s", ip);
+    if (n > 0) gatt_server_send_status(line);
 
     syscoord_on_wifi_state(true);
     ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&ev->ip_info.ip));
@@ -98,7 +109,6 @@ static void got_ip(void *arg, esp_event_base_t b, int32_t id, void *data) {
     if (!ota_verified) {
         const esp_partition_t *running = esp_ota_get_running_partition();
         if (running && running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY) {
-            // Factory images are inherently VALID; skip mark to avoid noisy warning.
             ESP_LOGI(TAG, "Running from factory image — skipping OTA valid-mark.");
             ota_verified = true;
         } else {
@@ -106,7 +116,6 @@ static void got_ip(void *arg, esp_event_base_t b, int32_t id, void *data) {
             if (e == ESP_OK) {
                 ESP_LOGI(TAG, "OTA verified - rollback cancelled.");
             } else if (e == ESP_ERR_INVALID_STATE) {
-                // Already valid or not in pending-verify — keep this quiet now.
                 ESP_LOGI(TAG, "OTA already valid (no pending-verify).");
             } else {
                 ESP_LOGW(TAG, "OTA valid-mark failed: %s", esp_err_to_name(e));
@@ -116,7 +125,7 @@ static void got_ip(void *arg, esp_event_base_t b, int32_t id, void *data) {
     }
 
     errsrc_set(NULL);                    // "NONE"
-    monitor_on_wifi_error(ERRSRC_NONE);  // reset failure streak
+    monitor_on_wifi_error(ERRSRC_NONE); 
 
     if (s_tcp_start_timer && !esp_timer_is_active(s_tcp_start_timer)) {
         ESP_LOGI(TAG, "Scheduling TCP server start in 800 ms …");
@@ -125,6 +134,8 @@ static void got_ip(void *arg, esp_event_base_t b, int32_t id, void *data) {
         ESP_LOGI(TAG, "TCP server already started or timer not set.");
     }
 }
+
+
 /* --- IP lost --- */
 static void got_ip_lost(void *arg, esp_event_base_t b, int32_t id, void *data) {
     (void)arg; (void)b; (void)id; (void)data;

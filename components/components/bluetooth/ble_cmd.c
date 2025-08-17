@@ -64,10 +64,10 @@ void ble_cmd_on_connect(ble_cmd_t* cli,
     cli->tx_handle = tx_char_handle;
 
     // Initialize command context to mirror TCP behavior:
-    cli->ctx.authed   = false;          // start locked down (auth required).
-    cli->ctx.is_ble   = true;           // mark BLE path.
+    cli->ctx.authed   = false;          // start locked down (auth required)
+    cli->ctx.is_ble   = true;           // mark BLE path
     cli->ctx.tcp_fd   = -1;
-    cli->ctx.ble_link = cli;            // opaque backref if ever needed.
+    cli->ctx.ble_link = cli;            // opaque backref if you ever need it
     cli->ctx.write    = ble_cmd_write_cb;
 
     ESP_LOGI(TAG, "BLE CMD connected (conn_id=%u, tx_handle=0x%04x).",
