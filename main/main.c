@@ -22,5 +22,5 @@ void app_main(void) {
     led_task_start();
 
     // Primary path; BLE is owned by syscoord and will be started only in RECOVERY.
-    wifi_start("TN_wifi_D6C00", "7WDFEWGTNM");
+    wifi_start("my_password", "my_something");
 }
