@@ -13,7 +13,7 @@ except Exception:
 # ---------- Config ----------
 ADDR   = os.getenv("LOPY_ADDR", "192.168.10.125")
 PORT   = int(os.getenv("LOPY_PORT", "8080"))
-TOKEN  = os.getenv("LOPY_TOKEN", "hunter2")
+TOKEN  = os.getenv("LOPY_TOKEN", "abc123")
 DEBUG_BLE = True
 
 CHUNK  = 16 * 1024
@@ -29,9 +29,11 @@ TX_PREFIX    = "efbe0200"
 WIFI_PREFIX  = "efbe0300"
 ERR_PREFIX   = "efbe0400"
 ALERT_PREFIX = "efbe0500"
+OTA_CTRL_PREFIX = "efbe0600"
+OTA_DATA_PREFIX = "efbe0700"
 
 BLE_ADV_NAMES = [n.strip() for n in os.getenv("LOPY_BLE_NAMES", "LoPy4").split(",") if n.strip()]
-BLE_ADDR = (os.getenv("LOPY_BLE_ADDR", "") or "").replace("-", ":").upper()
+BLE_ADDR = "10:52:1C:65:CC:C6"
 
 # --- Fast fallback tunables (no device power impact) ---
 TCP_POST_OTA_CONNECT_TIMEOUT = float(os.getenv("LOPY_TCP_RETRY_TIMEOUT", "1.3"))
@@ -65,26 +67,94 @@ def _is_wifi_ok(msg: str) -> bool:
         or "wifi_err=none" in m          # ERRSRC says “no error”.
     )
 
-def _resolve_by_prefix(svcs) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
-    rx = tx = wifi = errc = alertc = None
+def _resolve_by_prefix(svcs) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+    rx = tx = wifi = errc = alertc = ota_ctrl = ota_data = None
     if not svcs:
-        return rx, tx, wifi, errc, alertc
+        return rx, tx, wifi, errc, alertc, ota_ctrl, ota_data
     try:
         for s in svcs:
             for c in (getattr(s, "characteristics", []) or []):
                 u = str(getattr(c, "uuid", "")).lower()
                 if not u:
                     continue
-                if   u.startswith(RX_PREFIX):    rx = str(c.uuid)
-                elif u.startswith(TX_PREFIX):    tx = str(c.uuid)
-                elif u.startswith(WIFI_PREFIX):  wifi = str(c.uuid)
-                elif u.startswith(ERR_PREFIX):   errc = str(c.uuid)
-                elif u.startswith(ALERT_PREFIX): alertc = str(c.uuid)
-            if rx and tx and wifi and errc and alertc:
+                if   u.startswith(RX_PREFIX):        rx = str(c.uuid)
+                elif u.startswith(TX_PREFIX):        tx = str(c.uuid)
+                elif u.startswith(WIFI_PREFIX):      wifi = str(c.uuid)
+                elif u.startswith(ERR_PREFIX):       errc = str(c.uuid)
+                elif u.startswith(ALERT_PREFIX):     alertc = str(c.uuid)
+                elif u.startswith(OTA_CTRL_PREFIX):  ota_ctrl = str(c.uuid)
+                elif u.startswith(OTA_DATA_PREFIX):  ota_data = str(c.uuid)
+            if rx and tx and wifi and errc and alertc and ota_ctrl and ota_data:
                 break
     except Exception:
         pass
-    return rx, tx, wifi, errc, alertc
+    return rx, tx, wifi, errc, alertc, ota_ctrl, ota_data
+
+async def ble_ota_upload(client, ctrl_uuid: str, data_uuid: str, tx_uuid: str, bin_path: pathlib.Path):
+    # Read and checksum
+    data  = bin_path.read_bytes()
+    size  = len(data)
+    crc32 = zlib.crc32(data) & 0xFFFFFFFF
+    print(f"[BLE-OTA] {bin_path.name}  {size} bytes  CRC 0x{crc32:08X}")
+
+    # Start (write-with-response)
+    try:
+        await client.write_gatt_char(ctrl_uuid, f"BL_OTA START {size} {crc32:08X}".encode(), response=True)
+    except Exception as e:
+        print(f"[BLE-OTA] START failed: {e}")
+        return False
+
+    # Figure frame payload (MTU - 3 ATT hdr - 6 our header). Fallback to 23 if unknown.
+    mtu = getattr(client, "mtu_size", None) or 23
+    frame_payload = max(8, min(180, mtu - 3 - 6))
+
+    # Stream chunks (write without response)
+    seq = 0
+    off = 0
+    last_prog = 0
+    try:
+        while off < size:
+            chunk = data[off:off+frame_payload]
+            hdr = struct.pack("<IH", seq, len(chunk))
+            await client.write_gatt_char(data_uuid, hdr + chunk, response=False)
+            seq += 1
+            off += len(chunk)
+
+            # yield every ~64k to keep UI responsive
+            if off - last_prog >= 64*1024:
+                last_prog = off
+                pct = (off * 100) // size
+                print(f"[BLE-OTA] {off}/{size} ({pct}%)")
+                await asyncio.sleep(0)  # cooperative yield
+    except Exception as e:
+        print(f"[BLE-OTA] DATA failed at seq {seq}: {e}")
+        # best-effort abort
+        try:
+            await client.write_gatt_char(ctrl_uuid, b"BL_OTA ABORT", response=True)
+        except Exception:
+            pass
+        return False
+
+    # Give the peripheral a moment to flush the last write.
+    await asyncio.sleep(0.25)
+
+    # Finish (write-with-response) with one retry; tolerate disconnect if data is complete.
+    for attempt in range(2):
+        try:
+            await client.write_gatt_char(ctrl_uuid, b"BL_OTA FINISH", response=True)
+            print("[BLE-OTA] FINISH sent.")
+            print("[BLE-OTA] Done; device should reboot.")
+            return True
+        except Exception as e:
+            # If we already streamed the entire image, the device likely finalized and rebooted.
+            if off >= size:
+                print(f"[BLE-OTA] FINISH send failed ({e}); data complete. Treating as success (device likely rebooting).")
+                return True
+            if attempt == 0:
+                await asyncio.sleep(0.5)  # brief backoff, then retry once
+                continue
+            print(f"[BLE-OTA] FINISH failed: {e}")
+            return False
 
 async def _quick_ble_seen(timeout: float) -> bool:
     if not BLE_AVAILABLE:
@@ -283,7 +353,7 @@ def ota_tcp(sock: socket.socket, file_path: pathlib.Path) -> Optional[socket.soc
         if time.time() >= first_ble_check_at and BLE_AVAILABLE:
             if asyncio.run(_quick_ble_seen(BLE_QUICK_SCAN_S)):
                 print("[OTA] BLE lifeboat detected — switching to BLE now.")
-                wifi_ok = asyncio.run(ble_session())  # lets you SETWIFI etc.
+                wifi_ok = asyncio.run(ble_session())
                 if wifi_ok:
                     # hop back to TCP with normal timeouts.
                     return connect_and_auth(print_banner=False)
@@ -348,9 +418,6 @@ async def _wait_for_services(client: "BleakClient", tries: int = 40, delay: floa
 
 async def ble_session() -> bool:
     """Return True if Wi-Fi became OK and we should switch back to TCP."""
-    if not BLE_AVAILABLE:
-        print("[BLE] Bleak not installed; BLE fallback disabled.")
-        return False
 
     print("[BLE] Scanning....")
     dev = await _scan_for_device(timeout=12.0)
@@ -387,7 +454,8 @@ async def ble_session() -> bool:
             print("[BLE] Services not visible; disconnecting.")
             return False
 
-        rx_uuid, tx_uuid, wifi_uuid, err_uuid, alert_uuid = _resolve_by_prefix(svcs)
+        rx_uuid, tx_uuid, wifi_uuid, err_uuid, alert_uuid, ota_ctrl_uuid, ota_data_uuid = _resolve_by_prefix(svcs)
+
         if not (rx_uuid and tx_uuid and wifi_uuid and err_uuid):
             print("[BLE] Could not resolve expected characteristics by prefix.")
             return False
@@ -457,8 +525,21 @@ async def ble_session() -> bool:
             if low in ("/q", "/quit", "exit"):
                 break
             if low.startswith(("/ota ", "ota ")):
-                print("[BLE] OTA over BLE is disabled. Use TCP.")
-                continue
+                path_str = line.split(None, 1)[1] if len(line.split(None, 1)) == 2 else ""
+                bin_path = pathlib.Path(path_str)
+                if not bin_path.is_file():
+                    print("[BLE-OTA] file not found.")
+                    continue
+                if not (ota_ctrl_uuid and ota_data_uuid):
+                    print("[BLE-OTA] Device lacks BLE-OTA characteristics.")
+                    continue
+
+                ok = await ble_ota_upload(client, ota_ctrl_uuid, ota_data_uuid, tx_uuid, bin_path)
+                if ok:
+                    # Device is rebooting, but Wi-Fi may still be down. Don’t claim success yet.
+                    await asyncio.sleep(2.0)
+                    return False
+                return False
             if low.startswith(("/setwifi ", "setwifi ")):
                 parts = line.split(maxsplit=2)
                 if len(parts) == 3:
@@ -551,24 +632,24 @@ def _readline_nonblock_posix(slice_sec: float = 0.2) -> Optional[str]:
 
 # ---------- Interactive TCP session with idle keepalive  ---------- #
 def tcp_session():
-    # Try TCP; if not, fall back to BLE, then retry TCP.
+    # Try TCP; if not, fall back to BLE, then retry TCP. (don't exit unless user quits).
     while True:
         s = connect_and_auth()
         if s:
             break
         wifi_came_up = asyncio.run(ble_session())
         if not wifi_came_up:
-            return
+            # stay alive: try TCP again, then fall back to BLE on next loop.
+            continue
         for _ in range(10):
             s = connect_and_auth(print_banner=False)
             if s:
                 send_line(s, "version")
                 break
-            time.sleep(1.0)
-        if s:
-            break
-        print("[warn] Wi-Fi said OK but TCP still not reachable; staying in BLE.")
-
+        if not s:
+            print("[warn] TCP still down; staying on BLE.")
+            # Loop again: this will fail TCP quickly and drop back into ble_session().
+            continue
     print("LoPy> ", end="", flush=True)
     last_ping = time.time()
     first_ping_at = time.time() + 8.0
@@ -588,10 +669,16 @@ def tcp_session():
                 if not ok:
                     s2 = try_reconnect("keepalive failed")
                     if not s2:
-                        return
-                    s = s2
-                    print("LoPy> ", end="", flush=True)
-                    continue
+                        # Drop into BLE and keep the session alive.
+                        wifi_ok = asyncio.run(ble_session())
+                        if wifi_ok:
+                            s2 = connect_and_auth(print_banner=False)
+                            if s2:
+                                s = s2
+                                print("LoPy> ", end="", flush=True)
+                                continue
+                        print("LoPy> ", end="", flush=True)
+                        continue
 
             if line is None:
                 continue
@@ -619,16 +706,15 @@ def tcp_session():
                     print("LoPy> ", end="", flush=True)
                 else:
                     print("[OTA] TCP didn’t come back. Trying BLE fallback...")
-                    wifi_came_up = asyncio.run(ble_session())
-                    if wifi_came_up:
-                        s = connect_and_auth() or s
-                        if not s:
-                            print("[warn] Still no TCP after BLE recovery.")
-                            break
-                        print("LoPy> ", end="", flush=True)
-                    else:
-                        print("[OTA] BLE couldn’t recover. You can keep using BLE or power-cycle.")
-                        break
+                wifi_ok = asyncio.run(ble_session())
+                if wifi_ok:
+                    s2 = connect_and_auth(print_banner=False)
+                    if s2:
+                        s = s2
+                        print("[OTA] Reconnected over TCP.")
+                else:
+                    print("[OTA] Staying on BLE; TCP still down.")
+                print("LoPy> ", end="", flush=True)
                 continue
 
             if low.startswith("/setwifi ") or low.startswith("setwifi "):

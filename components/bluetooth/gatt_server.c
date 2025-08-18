@@ -14,6 +14,7 @@
 #include "syscoord.h"
 #include "errsrc.h"
 #include "ble_cmd.h"
+#include "ble_ota_stub.h"
 
 static const char *TAG = "GATT";
 static ble_cmd_t *s_cli = NULL; 
@@ -44,6 +45,16 @@ static const uint8_t WIFI_CRED_UUID[16] = {
 static const uint8_t ERRSRC_UUID[16] = {
     0x56,0x49,0x43,0x45,0x45,0x49,0x4B,0xFB,0xFB,0xFB,0xFB,0xFB,0x00,0x04,0xBE,0xEF
 };
+// 128-bit UUIDs in LSB→MSB byte order, same base as RX/TX/WIFI/ERR/ALERT.
+// efbe0600-fbfb-fbfb-fb4b-494545434956  (OTA_CTRL)
+// efbe0700-fbfb-fbfb-fb4b-494545434956  (OTA_DATA)
+static const uint8_t UUID_EFBE_OTA_CTRL[16] = {
+    0x56,0x49,0x43,0x45,0x45,0x49,0x4B,0xFB,0xFB,0xFB,0xFB,0xFB,0x00,0x06,0xBE,0xEF
+};
+static const uint8_t UUID_EFBE_OTA_DATA[16] = {
+    0x56,0x49,0x43,0x45,0x45,0x49,0x4B,0xFB,0xFB,0xFB,0xFB,0xFB,0x00,0x07,0xBE,0xEF
+};
+
 
 /* Properties */
 static uint8_t rx_props = ESP_GATT_CHAR_PROP_BIT_WRITE_NR | ESP_GATT_CHAR_PROP_BIT_WRITE;
@@ -51,6 +62,8 @@ static uint8_t tx_props = ESP_GATT_CHAR_PROP_BIT_NOTIFY | ESP_GATT_CHAR_PROP_BIT
 static uint8_t wifi_props = ESP_GATT_CHAR_PROP_BIT_WRITE;
 static uint8_t errsrc_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
 static uint8_t alert_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static uint8_t ota_ctrl_props = ESP_GATT_CHAR_PROP_BIT_WRITE;       // write with response
+static uint8_t ota_data_props = ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
 static bool alert_notify_enabled = false;
 
 /* 16-bit helper UUIDs */
@@ -74,11 +87,18 @@ enum {
     IDX_ALERT_CHAR,
     IDX_ALERT_VAL,
     IDX_ALERT_CCC,
-    HRS_IDX_NB,
+    // OTA entries //
+    IDX_OTA_CTRL_CHAR,
+    IDX_OTA_CTRL_VAL,
+    IDX_OTA_DATA_CHAR,
+    IDX_OTA_DATA_VAL,
+
+    EFBE_IDX_NB,   // total attribute count
 };
 
+
 /* Handles & state */
-static uint16_t gatt_handle_table[HRS_IDX_NB];
+static uint16_t gatt_handle_table[EFBE_IDX_NB];
 static esp_gatt_if_t g_gatts_if = ESP_GATT_IF_NONE;
 static uint16_t g_conn_id = 0xFFFF;
 static bool tx_notify_enabled = false;
@@ -243,55 +263,71 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
         esp_ble_gatts_create_attr_tab((esp_gatts_attr_db_t[]){
             [IDX_SVC] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&primary_service_uuid, ESP_GATT_PERM_READ,
-                sizeof(SERVICE_UUID), sizeof(SERVICE_UUID), (uint8_t *)SERVICE_UUID} },
+            sizeof(SERVICE_UUID), sizeof(SERVICE_UUID), (uint8_t *)SERVICE_UUID} },
 
             [IDX_RX_CHAR] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-                sizeof(uint8_t), sizeof(uint8_t), &rx_props} },
+            sizeof(uint8_t), sizeof(uint8_t), &rx_props} },
             [IDX_RX_VAL] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_128, (uint8_t *)RX_UUID, ESP_GATT_PERM_WRITE, 512, 0, NULL} },
 
             [IDX_TX_CHAR] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-              sizeof(uint8_t), sizeof(uint8_t), &tx_props} },
+            sizeof(uint8_t), sizeof(uint8_t), &tx_props} },
             [IDX_TX_VAL] = { {ESP_GATT_AUTO_RSP},
-            {ESP_UUID_LEN_128, (uint8_t *)TX_UUID, ESP_GATT_PERM_READ,
-              512, 0, NULL} },
+            {ESP_UUID_LEN_128, (uint8_t *)TX_UUID, ESP_GATT_PERM_READ, 512, 0, NULL} },
             [IDX_TX_CCC] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid,
-              ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
-              sizeof(cccd_tx_val), sizeof(cccd_tx_val), cccd_tx_val} },
+            ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+            sizeof(cccd_tx_val), sizeof(cccd_tx_val), cccd_tx_val} },
 
             [IDX_WIFI_CHAR] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-              sizeof(uint8_t), sizeof(uint8_t), &wifi_props} },
+            sizeof(uint8_t), sizeof(uint8_t), &wifi_props} },
             [IDX_WIFI_VAL] = { {ESP_GATT_AUTO_RSP},
-            {ESP_UUID_LEN_128, (uint8_t *)WIFI_CRED_UUID, ESP_GATT_PERM_WRITE,
-              128, 0, NULL} },
+            {ESP_UUID_LEN_128, (uint8_t *)WIFI_CRED_UUID, ESP_GATT_PERM_WRITE, 128, 0, NULL} },
 
             [IDX_ERRSRC_CHAR] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-              sizeof(uint8_t), sizeof(uint8_t), &errsrc_props} },
+            sizeof(uint8_t), sizeof(uint8_t), &errsrc_props} },
             [IDX_ERRSRC_VAL] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_128, (uint8_t *)ERRSRC_UUID, ESP_GATT_PERM_READ,
-              sizeof(last_errsrc), sizeof(last_errsrc), (uint8_t *)last_errsrc} },
+            sizeof(last_errsrc), sizeof(last_errsrc), (uint8_t *)last_errsrc} },
             [IDX_ERRSRC_CCC] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid,
-              ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
-              sizeof(cccd_err_val), sizeof(cccd_err_val), cccd_err_val} },
+            ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+            sizeof(cccd_err_val), sizeof(cccd_err_val), cccd_err_val} },
 
             [IDX_ALERT_CHAR] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-              sizeof(uint8_t), sizeof(uint8_t), &alert_props} },
+            sizeof(uint8_t), sizeof(uint8_t), &alert_props} },
             [IDX_ALERT_VAL] = { {ESP_GATT_AUTO_RSP},
-            {ESP_UUID_LEN_128, (uint8_t *)ALERT_UUID, ESP_GATT_PERM_READ,
-              128, 0, NULL} },
+            {ESP_UUID_LEN_128, (uint8_t *)ALERT_UUID, ESP_GATT_PERM_READ, 128, 0, NULL} },
             [IDX_ALERT_CCC] = { {ESP_GATT_AUTO_RSP},
             {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid,
-              ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
-              sizeof(cccd_alert_val), sizeof(cccd_alert_val), cccd_alert_val} },
-        }, gatts_if, HRS_IDX_NB, 0);
+            ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+            sizeof(cccd_alert_val), sizeof(cccd_alert_val), cccd_alert_val} },
+
+            // --- OTA_CTRL characteristic (WRITE w/ response) ---
+            [IDX_OTA_CTRL_CHAR] = { {ESP_GATT_AUTO_RSP},
+            {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
+            sizeof(uint8_t), sizeof(uint8_t), &ota_ctrl_props} },
+            [IDX_OTA_CTRL_VAL] = { {ESP_GATT_AUTO_RSP},
+            {ESP_UUID_LEN_128, (uint8_t *)UUID_EFBE_OTA_CTRL,
+            ESP_GATT_PERM_WRITE, 512, 0, NULL} },
+
+            // --- OTA_DATA characteristic (WRITE_NO_RSP) ---
+            [IDX_OTA_DATA_CHAR] = { {ESP_GATT_AUTO_RSP},
+            {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
+            sizeof(uint8_t), sizeof(uint8_t), &ota_data_props} },
+            [IDX_OTA_DATA_VAL] = { {ESP_GATT_AUTO_RSP},
+            {ESP_UUID_LEN_128, (uint8_t *)UUID_EFBE_OTA_DATA,
+            ESP_GATT_PERM_WRITE, 512, 0, NULL} },
+
+        }, gatts_if, EFBE_IDX_NB, 0);
+
         break;
+
 
     case ESP_GATTS_CREAT_ATTR_TAB_EVT:
         if (param->add_attr_tab.status == ESP_GATT_OK) {
@@ -363,6 +399,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
      break;
 
     case ESP_GATTS_DISCONNECT_EVT:
+        ble_ota_on_disconnect();              
         syscoord_on_ble_state(false);
         ble_set_connected(false);
         if (s_cli) {
@@ -418,6 +455,11 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
                     gatt_alert_notify(&snap); // send one snapshot now
                 }
             }
+        } else if (param->write.handle == gatt_handle_table[IDX_OTA_CTRL_VAL]) {
+            ble_ota_on_ctrl_write(param->write.value, param->write.len);
+        }
+        else if (param->write.handle == gatt_handle_table[IDX_OTA_DATA_VAL]) {
+            ble_ota_on_data_write(param->write.value, param->write.len);
         }
         break;
 

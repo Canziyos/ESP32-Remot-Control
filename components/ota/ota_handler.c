@@ -1,14 +1,17 @@
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
-
+#include <stdbool.h> 
+#include <stdio.h> 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_ota_ops.h"
-#include "lwip/sockets.h"     // use lwIP’s socket API on ESP-IDF
+#include "lwip/sockets.h"     // lwIP’s socket API on ESP-IDF
+#include <inttypes.h>
+#include "esp_check.h"
 
 // CRC32 helpers: prefer IDF-provided, fallback to local.
 #if __has_include("esp_crc.h")
@@ -30,11 +33,174 @@
 #endif
 
 static const char *TAG = "OTA";
+static const char *TAG_OTA_X = "OTA-X"; 
 
 // Tunables.
-#define RECV_TIMEOUT_S   30        // generous to tolerate flash erase stalls
+#define RECV_TIMEOUT_S   30        // to tolerate flash erase stalls
 #define WRITE_BUF_SZ     4096
 #define YIELD_BYTES      (64*1024) // feed WDT every 64 KiB
+
+/* CRC32 for xport path (match zlib.crc32: seed=0, no final xor). */
+#if __has_include("esp_crc.h")
+  #include "esp_crc.h"
+  #define XCRC32_INIT()                    (0u)
+  #define XCRC32_UPDATE(crc, d, n)         esp_crc32_le((crc), (const uint8_t*)(d), (n))
+  #define XCRC32_FINAL(crc)                (crc)
+#elif __has_include("esp_rom_crc.h")
+  #include "esp_rom_crc.h"
+  #define XCRC32_INIT()                    (0u)
+  #define XCRC32_UPDATE(crc, d, n)         esp_rom_crc32_le((crc), (const uint8_t*)(d), (n))
+  #define XCRC32_FINAL(crc)                (crc)
+#else
+  static inline uint32_t XCRC32_INIT(void){ return 0u; }
+  static uint32_t XCRC32_UPDATE(uint32_t crc, const void *buf, size_t len) {
+      // Simple, portable CRC32 (little-endian), seed=0, no final xor.
+      static const uint32_t poly = 0xEDB88320u;
+      const uint8_t *p = (const uint8_t*)buf;
+      while (len--) {
+          crc ^= *p++;
+          for (int i = 0; i < 8; ++i)
+              crc = (crc >> 1) ^ (poly & (-(int)(crc & 1)));
+      }
+      return crc;
+  }
+  #define XCRC32_FINAL(crc)                (crc)
+#endif
+
+
+typedef struct {
+    bool                      active;
+    esp_ota_handle_t          handle;
+    const esp_partition_t    *dst;
+    size_t                    bytes_expected;
+    size_t                    bytes_written;
+    uint32_t                  crc_expect;
+    uint32_t                  crc_running;
+    char                      source[8];   // "TCP"/"BLE" (for logs)
+} ota_xport_ctx_t;
+
+static ota_xport_ctx_t s_ox = {0};
+
+static void ota_xport_clear(void) {
+    memset(&s_ox, 0, sizeof(s_ox));
+}
+
+esp_err_t ota_begin_xport(size_t total_size, uint32_t crc32_expect, const char *source)
+{
+    if (s_ox.active) {
+        ESP_LOGW(TAG_OTA_X, "begin: already active");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (total_size == 0) {                         // <-- add
+        return ESP_ERR_INVALID_ARG;                // <-- add
+    }
+
+    const esp_partition_t *dst = esp_ota_get_next_update_partition(NULL);
+    if (!dst) {
+        ESP_LOGE(TAG_OTA_X, "begin: no update partition");
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (total_size > dst->size) {                  // <-- move this AFTER dst is set
+        ESP_LOGE(TAG_OTA_X, "begin: image too large (%u > %u)",
+                 (unsigned)total_size, (unsigned)dst->size);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    esp_ota_handle_t h = 0;
+    esp_err_t err = esp_ota_begin(dst, total_size, &h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_OTA_X, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ota_xport_ctx_t tmp = {
+        .active         = true,
+        .handle         = h,
+        .dst            = dst,
+        .bytes_expected = total_size,
+        .bytes_written  = 0,
+        .crc_expect     = crc32_expect,
+        .crc_running    = XCRC32_INIT(),
+    };
+    if (source && *source) {
+        snprintf(tmp.source, sizeof(tmp.source), "%.7s", source);
+    } else {
+        strcpy(tmp.source, "XPORT");
+    }
+    s_ox = tmp;
+    ESP_LOGI(TAG_OTA_X, "begin: %s total=%" PRIu32 " dst=%s@0x%06x",
+             s_ox.source, (uint32_t)total_size, dst->label, (unsigned)dst->address);
+    return ESP_OK;
+}
+
+esp_err_t ota_write_xport(const uint8_t *data, size_t len)
+{
+    if (!s_ox.active) return ESP_ERR_INVALID_STATE;
+    if (!data || len == 0) return ESP_ERR_INVALID_ARG;
+    if (s_ox.bytes_written + len > s_ox.bytes_expected) {
+        ESP_LOGE(TAG_OTA_X, "write: overflow (%u + %u > %u)",
+                 (unsigned)s_ox.bytes_written, (unsigned)len, (unsigned)s_ox.bytes_expected);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    esp_err_t err = esp_ota_write(s_ox.handle, data, len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_OTA_X, "esp_ota_write failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    s_ox.bytes_written += len;
+    s_ox.crc_running = XCRC32_UPDATE(s_ox.crc_running, data, len);  
+    return ESP_OK;
+}
+
+esp_err_t ota_finish_xport(void)
+{
+    if (!s_ox.active) return ESP_ERR_INVALID_STATE;
+
+    if (s_ox.bytes_written != s_ox.bytes_expected) {
+        ESP_LOGE(TAG_OTA_X, "finish: short image (%u/%u)",
+                 (unsigned)s_ox.bytes_written, (unsigned)s_ox.bytes_expected);
+        (void)esp_ota_abort(s_ox.handle);
+        ota_xport_clear();
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    uint32_t calc = XCRC32_FINAL(s_ox.crc_running); 
+    if (s_ox.crc_expect && calc != s_ox.crc_expect) {
+        ESP_LOGE(TAG_OTA_X, "finish: CRC mismatch calc=%08X expect=%08X", calc, s_ox.crc_expect);
+        (void)esp_ota_abort(s_ox.handle);
+        ota_xport_clear();
+        return ESP_ERR_INVALID_CRC;
+    }
+
+    esp_err_t err = esp_ota_end(s_ox.handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_OTA_X, "esp_ota_end failed: %s", esp_err_to_name(err));
+        ota_xport_clear();
+        return err;
+    }
+
+    err = esp_ota_set_boot_partition(s_ox.dst);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_OTA_X, "set_boot failed: %s", esp_err_to_name(err));
+        ota_xport_clear();
+        return err;
+    }
+
+    ESP_LOGI(TAG_OTA_X, "finish: %s OK (%u bytes). Ready to reboot.",
+             s_ox.source, (unsigned)s_ox.bytes_written);
+    ota_xport_clear();
+    return ESP_OK;
+}
+
+void ota_abort_xport(const char *reason)
+{
+    if (!s_ox.active) return;
+    ESP_LOGW(TAG_OTA_X, "abort: %s", reason ? reason : "unknown");
+    (void)esp_ota_abort(s_ox.handle);
+    ota_xport_clear();
+}
 
 static ssize_t recv_fully(int fd, void *buf, size_t len) {
     uint8_t *p = (uint8_t *)buf;

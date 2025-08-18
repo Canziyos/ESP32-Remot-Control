@@ -97,17 +97,21 @@ static void set_mode(sc_mode_t m) {
         break;
 
     case SC_MODE_WAIT_CONTROL:
-        /* Hide BLE while waiting; arm rollback window only when needed. */
+        /* Hide BLE while waiting for control. */
         ble_lifeboat_set(false);
         ble_fallback_stop();
 
         if (should_arm_control_timer()) {
+            /* Pending or post-rollback → allow rollback on first failure. */
             health_monitor_start(ROLLBACK_WINDOW_MS);
             ESP_LOGI(TAG, "Armed control timer (%u ms).", (unsigned)ROLLBACK_WINDOW_MS);
         } else {
-            ESP_LOGI(TAG, "No control timer (factory/valid image).");
+            /* Valid/factory image → no rollback window, but DO re-arm monitor. */
+            health_monitor_start(0);  // event-driven escalation only
+            ESP_LOGI(TAG, "Health monitor armed (no rollback window).");
         }
         break;
+
 
     case SC_MODE_NORMAL:
         /* Control path proven (Wi-Fi up + TCP authed). */

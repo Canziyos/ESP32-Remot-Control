@@ -1,14 +1,19 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <stdatomic.h>   // _Atomic
+#include <stdint.h>      // intptr_t
+#include <unistd.h>      // close()
+#include <errno.h>       // errno
 
 #include "tcp_server.h"
 #include "command.h"
 #include "commands.h"
-#include "syscoord.h"   // NEW: control-path + client-count hooks
+#include "syscoord.h"    // control-path + client-count hooks
 
 #define PORT 8080
 static const char *TAG = "TCP";
@@ -19,8 +24,22 @@ static _Atomic int s_client_count = 0;
 /* Write helper for TCP */
 static int tcp_write(const void *buf, int len, void *user) {
     int fd = (intptr_t)user;
-    ESP_LOGI(TAG, "tcp_write(fd=%d, len=%d): '%.*s'", fd, len, len, (const char *)buf);
+    ESP_LOGD(TAG, "tcp_write(fd=%d, len=%d)", fd, len);
     return send(fd, buf, len, 0);
+}
+
+/* Log without leaking secrets (AUTH token, Wi-Fi pwd). */
+static void log_sanitized_line(const char *line) {
+    if (!line) { ESP_LOGI(TAG, "(null)"); return; }
+    if (!strncasecmp(line, "AUTH ", 5)) {
+        ESP_LOGI(TAG, "Received from TCP: 'AUTH ****'");
+        return;
+    }
+    if (!strncasecmp(line, "SETWIFI ", 8)) {
+        ESP_LOGI(TAG, "Received from TCP: 'SETWIFI **** ****'");
+        return;
+    }
+    ESP_LOGI(TAG, "Received from TCP: '%s'", line);
 }
 
 /* Per-client task */
@@ -34,9 +53,6 @@ static void client_task(void *arg) {
 
     char line[128];
 
-    /* We’ll notify syscoord once per boot when AUTH first succeeds. */
-    static bool s_authed_notified_this_boot = false;
-
     cmd_ctx_t ctx = {
         .authed   = false,
         .is_ble   = false,
@@ -49,18 +65,16 @@ static void client_task(void *arg) {
         int n = recv(fd, line, sizeof(line) - 1, 0);
         if (n <= 0) break;
         line[n] = '\0';
-        ESP_LOGI(TAG, "Received from TCP: '%s' (len=%d)", line, n);
 
-        /* Dispatch the line; command handlers will flip ctx.authed on successful AUTH. */
+        log_sanitized_line(line);
+
+        /* Dispatch the line; handlers flip ctx.authed on successful AUTH. */
         cmd_dispatch_line(line, n, &ctx);
-
-        /* If this session just became authed and we haven't notified yet this boot, mark control OK. */
-        if (ctx.authed && !s_authed_notified_this_boot) {
-            s_authed_notified_this_boot = true;
-        }
+        /* No need to call syscoord here: commands.c already promotes to NORMAL
+           via syscoord_mark_tcp_authed() + syscoord_control_path_ok("TCP"). */
     }
 
-    shutdown(fd, 0);
+    shutdown(fd, SHUT_RDWR);
     close(fd);
 
     /* Drop client count and notify syscoord. */

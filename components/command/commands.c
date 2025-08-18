@@ -130,6 +130,7 @@ static void cmd_auth(const char *args, cmd_ctx_t *ctx) {
         reply(ctx, "DENIED\n");
     }
 }
+
 static void cmd_settoken(const char *args, cmd_ctx_t *ctx) {
     if (!ctx->authed) { reply(ctx, "DENIED\n"); return; }
     if (!args || !*args) { reply(ctx, "usage: SETTOKEN <newtoken>\n"); return; }
