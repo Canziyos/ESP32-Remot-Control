@@ -47,11 +47,8 @@ static void client_task(void *arg) {
     int fd = (intptr_t)arg;
     ESP_LOGI(TAG, "Client connected: fd=%d", fd);
 
-    /* Bump client count and notify syscoord. */
     int new_cnt = ++s_client_count;
     syscoord_on_tcp_clients(new_cnt);
-
-    char line[128];
 
     cmd_ctx_t ctx = {
         .authed   = false,
@@ -61,25 +58,45 @@ static void client_task(void *arg) {
         .write    = tcp_write
     };
 
+    char     line[128];
+    size_t   linelen = 0;
+    uint8_t  buf[256];
+
     for (;;) {
-        int n = recv(fd, line, sizeof(line) - 1, 0);
+        int n = recv(fd, buf, sizeof(buf), 0);
         if (n <= 0) break;
-        line[n] = '\0';
 
+        for (int i = 0; i < n; ++i) {
+            char c = (char)buf[i];
+            if (c == '\r') continue;
+
+            if (c != '\n') {
+                if (linelen < sizeof(line) - 1) line[linelen++] = c;
+                continue;
+            }
+
+            /* end of one command line */
+            line[linelen] = '\0';
+            if (linelen) {
+                log_sanitized_line(line);
+                cmd_dispatch_line(line, linelen, &ctx);
+            }
+            linelen = 0;
+        }
+    }
+
+    /* Optional: dispatch a final unterminated line on clean close */
+    if (linelen) {
+        line[linelen] = '\0';
         log_sanitized_line(line);
-
-        /* Dispatch the line; handlers flip ctx.authed on successful AUTH. */
-        cmd_dispatch_line(line, n, &ctx);
-        /* No need to call syscoord here: commands.c already promotes to NORMAL
-           via syscoord_mark_tcp_authed() + syscoord_control_path_ok("TCP"). */
+        cmd_dispatch_line(line, linelen, &ctx);
     }
 
     shutdown(fd, SHUT_RDWR);
     close(fd);
 
-    /* Drop client count and notify syscoord. */
     new_cnt = --s_client_count;
-    if (new_cnt < 0) new_cnt = 0;  // safety
+    if (new_cnt < 0) new_cnt = 0;
     syscoord_on_tcp_clients(new_cnt);
 
     vTaskDelete(NULL);

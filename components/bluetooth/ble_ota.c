@@ -102,9 +102,9 @@ void ble_ota_on_ctrl_write(const uint8_t *data, uint16_t len)
 
         ble_tx_send("OK REBOOTING");
         ESP_LOGI(TAG, "BLE-OTA complete: %u bytes.", (unsigned)s_bo.written);
+        ble_ota_reset();                       // avoid finalize-on-disconnect race.
         vTaskDelay(pdMS_TO_TICKS(400));
         esp_restart(); // no return
-        return;
     }
 
     if (strncmp(line, "BL_OTA ABORT", 12) == 0) {
@@ -159,6 +159,23 @@ void ble_ota_on_data_write(const uint8_t *data, uint16_t len)
                  (unsigned)s_bo.written, (unsigned)s_bo.total);
         ble_tx_send(msg);
         s_bo.next_prog_mark += 256 * 1024;
+    }
+    /* Finalize as soon as the last chunk arrives: FINISH becomes optional. */
+    if (s_bo.written == s_bo.total) {
+        ESP_LOGI(TAG, "Image complete on DATA stream; finalizing (no FINISH required)...");
+        esp_err_t err = ota_finish_xport();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "ota_finish_xport failed at end-of-data: %s", esp_err_to_name(err));
+            ble_tx_send("ERR FINISH");
+            ota_abort_xport("finish_fail");
+            ble_ota_reset();
+            return;
+        }
+        ble_tx_send("OK REBOOTING");
+        ESP_LOGI(TAG, "BLE-OTA complete: %u bytes.", (unsigned)s_bo.written);
+        ble_ota_reset();                       /* avoid double-finalize on disconnect */
+        vTaskDelay(pdMS_TO_TICKS(400));
+        esp_restart(); // no return
     }
 }
 

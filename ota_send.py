@@ -33,7 +33,7 @@ OTA_CTRL_PREFIX = "efbe0600"
 OTA_DATA_PREFIX = "efbe0700"
 
 BLE_ADV_NAMES = [n.strip() for n in os.getenv("LOPY_BLE_NAMES", "LoPy4").split(",") if n.strip()]
-BLE_ADDR = "10:52:1C:65:CC:C6"
+BLE_ADDR = (os.getenv("LOPY_BLE_ADDR", "") or "").replace("-", ":").upper()
 
 # --- Fast fallback tunables (no device power impact) ---
 TCP_POST_OTA_CONNECT_TIMEOUT = float(os.getenv("LOPY_TCP_RETRY_TIMEOUT", "1.3"))
@@ -136,7 +136,7 @@ async def ble_ota_upload(client, ctrl_uuid: str, data_uuid: str, tx_uuid: str, b
         return False
 
     # Give the peripheral a moment to flush the last write.
-    await asyncio.sleep(0.25)
+    await asyncio.sleep(0.45)
 
     # Finish (write-with-response) with one retry; tolerate disconnect if data is complete.
     for attempt in range(2):
@@ -679,6 +679,13 @@ def tcp_session():
                                 continue
                         print("LoPy> ", end="", flush=True)
                         continue
+                    else:
+                        # SUCCESS: use the new socket and give it a grace window
+                        s = s2
+                        last_ping   = time.time()
+                        first_ping_at = time.time() + 8.0   # postpone next keepalive a bit.
+                        print("LoPy> ", end="", flush=True)
+                        continue
 
             if line is None:
                 continue
@@ -704,19 +711,19 @@ def tcp_session():
                     s = s_new
                     print("[OTA] Reconnected over TCP.")
                     print("LoPy> ", end="", flush=True)
+                    continue
                 else:
                     print("[OTA] TCP didn’t come back. Trying BLE fallback...")
-                wifi_ok = asyncio.run(ble_session())
-                if wifi_ok:
-                    s2 = connect_and_auth(print_banner=False)
-                    if s2:
-                        s = s2
-                        print("[OTA] Reconnected over TCP.")
-                else:
-                    print("[OTA] Staying on BLE; TCP still down.")
-                print("LoPy> ", end="", flush=True)
-                continue
-
+                    wifi_ok = asyncio.run(ble_session())
+                    if wifi_ok:
+                        s2 = connect_and_auth(print_banner=False)
+                        if s2:
+                            s = s2
+                            print("[OTA] Reconnected over TCP.")
+                    else:
+                        print("[OTA] Staying on BLE; TCP still down.")
+                    print("LoPy> ", end="", flush=True)
+                    continue
             if low.startswith("/setwifi ") or low.startswith("setwifi "):
                 try:
                     send_line(s, line.strip())

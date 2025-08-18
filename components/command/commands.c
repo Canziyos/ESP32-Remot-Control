@@ -16,8 +16,9 @@
 #include "esp_partition.h"
 #include <stdbool.h>
 
+#include "esp_app_format.h" // esp_app_desc_t
 
-/* ---- helpers ---- */
+
 
 // --- AUTH token in NVS ("auth"/"token") ---
 static char s_auth_token[65] = "hunter2";   // default.
@@ -151,8 +152,23 @@ static void cmd_led_off(const char *args, cmd_ctx_t *ctx) {
 
 static void cmd_version(const char *args, cmd_ctx_t *ctx) {
     (void)args;
-    reply(ctx, "1.0.0\n");
+    esp_app_desc_t d = {0};
+    const esp_partition_t *run = esp_ota_get_running_partition();
+    if (run && esp_ota_get_partition_description(run, &d) == ESP_OK && d.version[0]) {
+        char out[96];
+        int n = snprintf(out, sizeof(out), "%s\n", d.version);
+        ctx->write(out, n, ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd);
+        return;
+    }
+#ifdef CONFIG_APP_PROJECT_VER
+    char out[96];
+    int n = snprintf(out, sizeof(out), "%s\n", CONFIG_APP_PROJECT_VER);
+    ctx->write(out, n, ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd);
+#else
+    ctx->write("unknown\n", 8, ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd);
+#endif
 }
+
 
 /* OTA <size> <crc>
  * ota_perform() sends "ACK\n" itself. */
