@@ -19,3 +19,4 @@ idea/
 # Python venv
 venv/
 .env/
+config.txt
