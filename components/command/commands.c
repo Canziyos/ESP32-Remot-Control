@@ -15,21 +15,22 @@
 #include "bootflag.h"
 #include "esp_partition.h"
 #include <stdbool.h>
-
+#include "app_cfg.h"
+#include <stdarg.h>
 #include "esp_app_format.h" // esp_app_desc_t
 
 
 
 // --- AUTH token in NVS ("auth"/"token") ---
-static char s_auth_token[65] = "hunter2";   // default.
+static char s_auth_token[65] = APP_DEFAULT_AUTH_TOKEN;
 static bool s_auth_loaded = false;
 
 static void auth_token_load(void) {
     if (s_auth_loaded) return;
     nvs_handle_t h;
-    if (nvs_open("auth", NVS_READONLY, &h) == ESP_OK) {
+    if (nvs_open(NVS_NS_AUTH, NVS_READONLY, &h) == ESP_OK) {
         size_t len = sizeof(s_auth_token);
-        if (nvs_get_str(h, "token", s_auth_token, &len) != ESP_OK) {
+        if (nvs_get_str(h, NVS_KEY_AUTH_TOKEN, s_auth_token, &len) != ESP_OK) {
             // keep default
         }
         nvs_close(h);
@@ -39,9 +40,9 @@ static void auth_token_load(void) {
 
 static esp_err_t auth_token_save(const char *tok) {
     nvs_handle_t h;
-    esp_err_t err = nvs_open("auth", NVS_READWRITE, &h);
+    esp_err_t err = nvs_open(NVS_NS_AUTH, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
-    err = nvs_set_str(h, "token", tok ? tok : "");
+    err = nvs_set_str(h, NVS_KEY_AUTH_TOKEN, tok ? tok : "");
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     if (err == ESP_OK) {
@@ -57,6 +58,18 @@ static inline void *stream_user(cmd_ctx_t *ctx) {
 }
 static inline void reply(cmd_ctx_t *ctx, const char *s) {
     ctx->write(s, (int)strlen(s), stream_user(ctx));
+}
+
+// printf-style reply helper (bounded, NUL-safe).
+static void replyf(cmd_ctx_t *ctx, const char *fmt, ...) {
+    char buf[320];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return;
+    buf[sizeof(buf)-1] = '\0';
+    reply(ctx, buf);
 }
 
 static const char* mode_to_str(sc_mode_t m) {
@@ -82,7 +95,6 @@ static const char* _ota_state_str(esp_ota_img_states_t st) {
 
 static void cmd_diag(const char *args, cmd_ctx_t *ctx) {
     (void)args;
-    char buf[320];
     const esp_partition_t *run = esp_ota_get_running_partition();
     esp_ota_img_states_t st = ESP_OTA_IMG_UNDEFINED;
     if (run) (void)esp_ota_get_state_partition(run, &st);
@@ -90,7 +102,7 @@ static void cmd_diag(const char *args, cmd_ctx_t *ctx) {
     sc_mode_t mode = syscoord_get_mode();
     bool post_rb = bootflag_is_post_rollback();
 
-    snprintf(buf, sizeof(buf),
+    replyf(ctx,
         "PART=%s SUB=%d OFF=0x%06x SIZE=%u\r\n"
         "OTA_STATE=%s\r\n"
         "POST_RB=%d\r\n"
@@ -100,7 +112,6 @@ static void cmd_diag(const char *args, cmd_ctx_t *ctx) {
         _ota_state_str(st),
         post_rb ? 1 : 0,
         mode_to_str(mode));
-    reply(ctx, buf);
 }
 
 
@@ -152,27 +163,24 @@ static void cmd_led_off(const char *args, cmd_ctx_t *ctx) {
 
 static void cmd_version(const char *args, cmd_ctx_t *ctx) {
     (void)args;
-    esp_app_desc_t d = {0};
+    esp_app_desc_t d = (esp_app_desc_t){0};
     const esp_partition_t *run = esp_ota_get_running_partition();
+
     if (run && esp_ota_get_partition_description(run, &d) == ESP_OK && d.version[0]) {
-        char out[96];
-        int n = snprintf(out, sizeof(out), "%s\n", d.version);
-        ctx->write(out, n, ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd);
+        replyf(ctx, "%s\n", d.version);
         return;
     }
 #ifdef CONFIG_APP_PROJECT_VER
-    char out[96];
-    int n = snprintf(out, sizeof(out), "%s\n", CONFIG_APP_PROJECT_VER);
-    ctx->write(out, n, ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd);
+    replyf(ctx, "%s\n", CONFIG_APP_PROJECT_VER);
 #else
-    ctx->write("unknown\n", 8, ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd);
+    reply(ctx, "unknown\n");
 #endif
 }
-
 
 /* OTA <size> <crc>
  * ota_perform() sends "ACK\n" itself. */
 static void cmd_ota(const char *args, cmd_ctx_t *ctx) {
+    if (!args || !*args) { reply(ctx, "BADFMT\n"); return; }
     unsigned size_u = 0, crc_u = 0;
     if (sscanf(args, "%u %x", &size_u, &crc_u) == 2 && size_u > 0) {
         uint32_t sz = (uint32_t)size_u;
@@ -188,6 +196,7 @@ static void cmd_ota(const char *args, cmd_ctx_t *ctx) {
 }
 
 static void cmd_setwifi(const char *args, cmd_ctx_t *ctx) {
+    if (!args || !*args) { reply(ctx, "BADFMT\n"); return; }
     char ssid[33] = {0}, pwd[65] = {0};
     if (sscanf(args, "%32s %64s", ssid, pwd) == 2) {
         wifi_set_credentials(ssid, pwd);          // triggers reconnect
@@ -202,12 +211,8 @@ static void cmd_errsrc(const char *args, cmd_ctx_t *ctx) {
     const char *err = errsrc_get(); if (!err) err = "NONE";
     sc_mode_t m = syscoord_get_mode();
 
-    char line[96];
-    (void)snprintf(line, sizeof(line), "mode=%s errsrc=%s\n", mode_to_str(m), err);
-    reply(ctx, line);
+   replyf(ctx, "mode=%s errsrc=%s\n", mode_to_str(m), err);
 }
-
-
 
 /* ---- Command Table ---- */
 #define CMD(name, auth, fn) { (name), sizeof(name)-1, (auth), (fn) }

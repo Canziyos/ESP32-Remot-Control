@@ -1,7 +1,8 @@
 // main/main.c
+#include "sdkconfig.h"      // CONFIG_LOG_DEFAULT_LEVEL.
 #include "nvs_flash.h"
 #include "esp_log.h"
-#include "esp_ota_ops.h"        // <-- add this.
+#include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "syscoord.h"
 #include "command_bus.h"
@@ -10,6 +11,9 @@
 #include "bootflag.h"
 
 void app_main(void) {
+    // sdkconfig's global verbosity (Menuconfig => Log output => Default log verbosity).
+    esp_log_level_set("*", CONFIG_LOG_DEFAULT_LEVEL);
+
     // One-time NVS init (with erase-on-upgrade fallback).
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -30,6 +34,6 @@ void app_main(void) {
     led_task_start();
 
     // Use saved credentials from NVS.
-    // wifi_start("YourSSID", "YourPassword");
+    // wifi_start("ssid", "password");
     wifi_start(NULL, NULL);
 }

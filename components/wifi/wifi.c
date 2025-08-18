@@ -17,6 +17,7 @@
 #include "errsrc.h"
 #include "monitor.h"   // event-driven health escalation
 #include "gatt_server.h"
+#include "app_cfg.h"
 
 static const char *TAG = "WIFI";
 static bool s_had_ip = false;
@@ -52,15 +53,15 @@ static void wifi_create_tcp_timer_once(void) {
 /* --- Update Wi-Fi credentials in NVS + reconnect --- */
 void wifi_set_credentials(const char *ssid, const char *pwd) {
     nvs_handle_t h;
-    if (nvs_open("wifi", NVS_READWRITE, &h) != ESP_OK) {
+    if (nvs_open(NVS_NS_WIFI, NVS_READWRITE, &h) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to open NVS for Wi-Fi credentials");
         return;
     }
     if (!ssid) ssid = "";
     if (!pwd)  pwd  = "";
 
-    esp_err_t e1 = nvs_set_str(h, "ssid", ssid);
-    esp_err_t e2 = nvs_set_str(h, "password", pwd);
+    esp_err_t e1 = nvs_set_str(h, NVS_KEY_WIFI_SSID, ssid);
+    esp_err_t e2 = nvs_set_str(h, NVS_KEY_WIFI_PASSWORD, pwd);
     esp_err_t ec = nvs_commit(h);
     nvs_close(h);
 
@@ -188,12 +189,13 @@ void wifi_start(const char *ssid, const char *pwd) {
     } else {
         /* Load from NVS if present */
         nvs_handle_t h;
-        if (nvs_open("wifi", NVS_READONLY, &h) == ESP_OK) {
+        if (nvs_open(NVS_NS_WIFI, NVS_READONLY, &h) == ESP_OK) {
             size_t ssid_len = sizeof(sta_cfg.sta.ssid);
             size_t pwd_len  = sizeof(sta_cfg.sta.password);
-            esp_err_t e1 = nvs_get_str(h, "ssid", (char*)sta_cfg.sta.ssid, &ssid_len);
-            esp_err_t e2 = nvs_get_str(h, "password", (char*)sta_cfg.sta.password, &pwd_len);
+            esp_err_t e1 = nvs_get_str(h, NVS_KEY_WIFI_SSID, (char*)sta_cfg.sta.ssid, &ssid_len);
+            esp_err_t e2 = nvs_get_str(h, NVS_KEY_WIFI_PASSWORD, (char*)sta_cfg.sta.password, &pwd_len);
             nvs_close(h);
+            
             if (e1 == ESP_OK) {
                 ESP_LOGI(TAG, "Loaded Wi-Fi SSID from NVS");
             } else {

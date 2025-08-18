@@ -14,14 +14,15 @@
 
 #include "ble_fallback.h"
 #include "gatt_server.h"
+#include "ble_ids.h"   // SERVICE_UUID for ADV payload
 
 typedef enum {
     BLE_EVT_ADV_KICK,      // (re)start advertising if allowed
 } ble_evt_t;
 
-static QueueHandle_t s_ble_q   = NULL;
-static TaskHandle_t  s_ble_wkr = NULL;
-static const char *TAG = "BLE";
+static QueueHandle_t s_ble_q = NULL;
+static TaskHandle_t s_ble_wkr = NULL;
+static const char *TAG = "BLE_FALLBACK";
 static uint8_t s_adv_uuid[16];
 
 /* State */
@@ -150,7 +151,7 @@ void ble_start_advertising(void) {
         ESP_LOGI(TAG, "ADV requested but stack/payload not ready — deferring.");
         return;
     }
-    ble_post(BLE_EVT_ADV_KICK);               // eto nsure GAP call happens in worker
+    ble_post(BLE_EVT_ADV_KICK);               // GAP call happens in worker.
 }
 
 /* Let GATT tell us about link state (call on CONNECT/DISCONNECT). */
@@ -174,12 +175,13 @@ static void gap_evt(esp_gap_ble_cb_event_t ev, esp_ble_gap_cb_param_t *p) {
         if (p->adv_data_cmpl.status == ESP_BT_STATUS_SUCCESS) {
             s_adv_cfg_done |= ADV_CFG_FLAG;
             ESP_LOGI(TAG, "ADV payload configured.");
+
             ESP_LOGI(TAG, "ADV UUID128 (LSB->MSB): "
-                     "%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-                     SERVICE_UUID[0], SERVICE_UUID[1], SERVICE_UUID[2], SERVICE_UUID[3],
-                     SERVICE_UUID[4], SERVICE_UUID[5], SERVICE_UUID[6], SERVICE_UUID[7],
-                     SERVICE_UUID[8], SERVICE_UUID[9], SERVICE_UUID[10], SERVICE_UUID[11],
-                     SERVICE_UUID[12], SERVICE_UUID[13], SERVICE_UUID[14], SERVICE_UUID[15]);
+                  "%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                  s_adv_uuid[0], s_adv_uuid[1], s_adv_uuid[2], s_adv_uuid[3],
+                  s_adv_uuid[4], s_adv_uuid[5], s_adv_uuid[6], s_adv_uuid[7],
+                  s_adv_uuid[8], s_adv_uuid[9], s_adv_uuid[10], s_adv_uuid[11],
+                  s_adv_uuid[12], s_adv_uuid[13], s_adv_uuid[14], s_adv_uuid[15]);
         } else {
             ESP_LOGE(TAG, "ADV payload config failed: %d", p->adv_data_cmpl.status);
         }
