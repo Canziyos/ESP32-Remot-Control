@@ -1,6 +1,0 @@
-idf_component_register(
-  SRCS "ble_fallback.c" "gatt_server.c" "ble_cmd.c" "ble_ota_stub.c" "ble_ota.c"
-  INCLUDE_DIRS "."
-  REQUIRES core command common
-  PRIV_REQUIRES bt
-)

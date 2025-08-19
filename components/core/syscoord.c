@@ -36,6 +36,20 @@ static const char* _st_name(esp_ota_img_states_t st) {
     }
 }
 
+void syscoord_on_ble_service_started(void) {
+    sc_mode_t m = atomic_load(&g_mode);
+    if (m == SC_MODE_RECOVERY) {
+#if defined(CONFIG_FEATURE_BLE_LIFEBOAT) && CONFIG_FEATURE_BLE_LIFEBOAT
+        ESP_LOGI(TAG, "BLE service started; in RECOVERY -> start advertising.");
+        ble_start_advertising();
+#else
+        ESP_LOGI(TAG, "BLE service started; lifeboat disabled (no advertising).");
+#endif
+    } else {
+        ESP_LOGI(TAG, "BLE service started; mode=%d, not advertising.", (int)m);
+    }
+}
+
 /* ---- fwd decls ---- */
 static void set_mode(sc_mode_t m);
 
@@ -75,7 +89,8 @@ static void syscoord_worker(void *arg) {
         if (xQueueReceive(s_sys_q, &ev, portMAX_DELAY) == pdTRUE) {
             switch (ev) {
             case SYS_EVT_ENTER_RECOVERY:
-                /* Bring up BLE and start lifeboat advertising. */
+                /* Enter RECOVERY, then bring up BLE and lifeboat. */
+                set_mode(SC_MODE_RECOVERY);
                 ble_fallback_init();
                 ble_lifeboat_set(true);
                 alert_raise(ALERT_BLE_FATAL, "recovery mode: no control after rollback");

@@ -1,5 +1,5 @@
 idf_component_register(
   SRCS "syscoord.c" "monitor.c" "alerts.c" "bootflag.c" "errsrc.c"
-  INCLUDE_DIRS "."
-  PRIV_REQUIRES bluetooth nvs_flash app_update
+  INCLUDE_DIRS include
+  PRIV_REQUIRES ble nvs_flash app_update
 )

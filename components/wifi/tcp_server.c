@@ -1,10 +1,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-
+#include <strings.h>   // strncasecmp
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <string.h>
 #include <stdatomic.h>   // _Atomic
 #include <stdint.h>      // intptr_t
 #include <unistd.h>      // close()
@@ -66,26 +65,36 @@ static void client_task(void *arg) {
         int n = recv(fd, buf, sizeof(buf), 0);
         if (n <= 0) break;
 
-        for (int i = 0; i < n; ++i) {
-            char c = (char)buf[i];
-            if (c == '\r') continue;
+        const uint8_t *p = buf;
+        size_t left = (size_t)n;
+        while (left) {
+            const uint8_t *nl = memchr(p, '\n', left);
+            size_t chunk = nl ? (size_t)(nl - p) : left;
 
-            if (c != '\n') {
+            /* Copy chunk into the line buffer, skipping '\r'. */
+            for (size_t j = 0; j < chunk; ++j) {
+                char c = (char)p[j];
+                if (c == '\r') continue;
                 if (linelen < sizeof(line) - 1) line[linelen++] = c;
-                continue;
             }
 
-            /* end of one command line */
-            line[linelen] = '\0';
-            if (linelen) {
-                log_sanitized_line(line);
-                cmd_dispatch_line(line, linelen, &ctx);
+            if (nl) {
+                /* dispatch one complete line */
+                line[linelen] = '\0';
+                if (linelen) {
+                    log_sanitized_line(line);
+                    cmd_dispatch_line(line, linelen, &ctx);
+                }
+                linelen = 0;
+                p    = nl + 1;
+                left = left - chunk - 1;
+            } else {
+                p    += chunk;
+                left -= chunk;
             }
-            linelen = 0;
         }
     }
-
-    /* Optional: dispatch a final unterminated line on clean close */
+    /* Dispatch a final unterminated line on clean close */
     if (linelen) {
         line[linelen] = '\0';
         log_sanitized_line(line);
@@ -105,6 +114,8 @@ static void client_task(void *arg) {
 /* Server listener */
 static void server_task(void *pv) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) { ESP_LOGE(TAG, "socket(): %d", errno); vTaskDelete(NULL); }
+
     int one = 1;
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
 
@@ -113,14 +124,20 @@ static void server_task(void *pv) {
         .sin_port        = htons(PORT),
         .sin_addr.s_addr = htonl(INADDR_ANY)
     };
-    bind(s, (void *)&a, sizeof a);
-    listen(s, 4);
+    if (bind(s, (struct sockaddr *)&a, sizeof a) < 0) {
+        ESP_LOGE(TAG, "bind(): %d", errno); close(s); vTaskDelete(NULL);
+    }
+    if (listen(s, 4) < 0) {
+        ESP_LOGE(TAG, "listen(): %d", errno); close(s); vTaskDelete(NULL);
+    }
     ESP_LOGI(TAG, "Listening on %d.", PORT);
 
-    for (;;) {
+     for (;;) {
         int c = accept(s, NULL, NULL);
         if (c >= 0) {
             xTaskCreate(client_task, "cli", 4096, (void *)(intptr_t)c, 5, NULL);
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(50));
         }
     }
 }

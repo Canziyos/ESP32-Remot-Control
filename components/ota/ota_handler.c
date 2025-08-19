@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <inttypes.h>
-
+#include "app_cfg.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -56,9 +56,9 @@ static const char *TAG     = "OTA";
 static const char *TAG_X   = "OTA-X";
 
 /* Tunables */
-#define RECV_TIMEOUT_S   30         /* tolerate flash erase stalls */
-#define WRITE_BUF_SZ     4096
-#define YIELD_BYTES      (64*1024)  /* feed WDT roughly every 64 KiB */
+#define RECV_TIMEOUT_S   OTA_RECV_TIMEOUT_S
+#define WRITE_BUF_SZ     OTA_WRITE_BUF_SZ
+#define YIELD_BYTES      OTA_YIELD_BYTES
 
 /* =========================================================================
  *  BLE "xport" helpers (used by your GATT OTA)

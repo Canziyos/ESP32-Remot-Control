@@ -36,3 +36,13 @@
 #ifndef WIFI_RECONN_JITTER_PCT
 #define WIFI_RECONN_JITTER_PCT 10  /* ±10% jitter; set 0 to disable. */
 #endif
+
+#ifndef OTA_RECV_TIMEOUT_S
+#define OTA_RECV_TIMEOUT_S   30
+#endif
+#ifndef OTA_WRITE_BUF_SZ
+#define OTA_WRITE_BUF_SZ     4096
+#endif
+#ifndef OTA_YIELD_BYTES
+#define OTA_YIELD_BYTES      (64*1024)
+#endif
