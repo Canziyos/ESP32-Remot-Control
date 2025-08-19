@@ -4,30 +4,29 @@
 #include "freertos/timers.h"
 #include "esp_timer.h"
 #include "esp_log.h"
-#include "lwip/inet.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
+#include "esp_system.h"
 #include <assert.h>
+#include "lwip/inet.h"
 #include "esp_event.h"
 #include "nvs.h"
-#include "esp_ota_ops.h"
-#include "esp_partition.h"
 #include "tcp_server.h"
 #include "syscoord.h"
 #include "errsrc.h"
 #include "monitor.h"   // event-driven health escalation
 #include "gatt_server.h"
 #include "app_cfg.h"
+#include <stdio.h>
 
 static const char *TAG = "WIFI";
-static bool s_had_ip = false;
-static bool ota_verified = false;
 static esp_timer_handle_t s_tcp_start_timer = NULL;
 static TimerHandle_t s_reconn_tmr;
 static int s_retries = 0;
 
-#define RECONN_BASE_MS   500     // initial delay
-#define RECONN_MAX_MS  30000     // cap at 30s
+#define RECONN_BASE_MS WIFI_RECONN_BASE_MS
+#define RECONN_MAX_MS  WIFI_RECONN_MAX_MS
+
 /* --- Forward decls for handlers --- */
 static void got_ip(void *arg, esp_event_base_t b, int32_t id, void *data);
 static void got_ip_lost(void *arg, esp_event_base_t b, int32_t id, void *data);
@@ -49,7 +48,6 @@ static void wifi_create_tcp_timer_once(void) {
     ESP_ERROR_CHECK(esp_timer_create(&args, &s_tcp_start_timer));
 }
 
-/* --- Update Wi-Fi credentials in NVS + reconnect --- */
 /* --- Update Wi-Fi credentials in NVS + reconnect --- */
 void wifi_set_credentials(const char *ssid, const char *pwd) {
     nvs_handle_t h;
@@ -112,7 +110,6 @@ static const char *wifi_event_name(int32_t id) {
 // got_ip handler
 static void got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
 {   
-    s_had_ip = true;           // we’ve had a valid lease
     errsrc_set(NULL); 
     (void)arg; (void)base; (void)id;
     ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
@@ -127,26 +124,7 @@ static void got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
     syscoord_on_wifi_state(true);
     ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&ev->ip_info.ip));
 
-    if (!ota_verified) {
-        const esp_partition_t *running = esp_ota_get_running_partition();
-        if (running && running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY) {
-            ESP_LOGI(TAG, "Running from factory image — skipping OTA valid-mark.");
-            ota_verified = true;
-        } else {
-            esp_err_t e = esp_ota_mark_app_valid_cancel_rollback();
-            if (e == ESP_OK) {
-                ESP_LOGI(TAG, "OTA verified - rollback cancelled.");
-            } else if (e == ESP_ERR_INVALID_STATE) {
-                ESP_LOGI(TAG, "OTA already valid (no pending-verify).");
-            } else {
-                ESP_LOGW(TAG, "OTA valid-mark failed: %s", esp_err_to_name(e));
-            }
-            ota_verified = true;
-        }
-    }
-
-    errsrc_set(NULL);
-    monitor_on_wifi_error(ERRSRC_NONE);
+    monitor_on_wifi_error(ES_NONE);
 
     /* CHANGED: success -> reset backoff and stop any pending reconnect timer */
     s_retries = 0;
@@ -216,13 +194,6 @@ void wifi_start(const char *ssid, const char *pwd) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "Wi-Fi driver started – waiting for IP …");
-
-    /* If this image was already marked VALID, remember that */
-    esp_ota_img_states_t st;
-    const esp_partition_t *run = esp_ota_get_running_partition();
-    if (esp_ota_get_state_partition(run, &st) == ESP_OK && st == ESP_OTA_IMG_VALID) {
-        ota_verified = true;
-    }
 }
 
 /* --- IP lost --- */
@@ -232,18 +203,16 @@ static void got_ip_lost(void *arg, esp_event_base_t base, int32_t id, void *data
 
     syscoord_on_wifi_state(false);
 
-    const char *cur = errsrc_get();
-    if (!cur) cur = "NONE";
-
     // Only post IP_LOST if we're not already in a specific Wi-Fi failure.
-    if (strcmp(cur, "NO_AP") &&
-        strcmp(cur, "AUTH_FAIL") &&
-        strcmp(cur, "ASSOC_EXPIRE") &&
-        strcmp(cur, "4WAY_TIMEOUT") &&
-        strcmp(cur, "BEACON_TO")) {
-        errsrc_set("IP_LOST");
-        monitor_on_wifi_error(ERRSRC_IP_LOST);
-    }
+    errsrc_t cur_code = errsrc_get_code();
+    if (cur_code != ES_NO_AP &&
+        cur_code != ES_AUTH_FAIL &&
+        cur_code != ES_ASSOC_EXPIRE &&
+        cur_code != ES_4WAY_TIMEOUT &&
+        cur_code != ES_BEACON_TO) {
+        errsrc_set_enum(ES_IP_LOST);
+        monitor_on_wifi_error(ES_IP_LOST);
+    } 
 }
 
 
@@ -260,8 +229,8 @@ static void wifi_evt(void *arg, esp_event_base_t base, int32_t id, void *data) {
             /* CHANGED: use backoff-driven connect */
             schedule_reconnect();
         } else {
-            errsrc_set("NO_CREDS");
-            monitor_on_wifi_error(ERRSRC_NO_CREDS);
+            errsrc_set_enum(ES_NO_CREDS);
+            monitor_on_wifi_error(ES_NO_CREDS);
             ESP_LOGW(TAG, "No Wi-Fi credentials set; waiting for provisioning.");
         }
         return;
@@ -277,18 +246,17 @@ static void wifi_evt(void *arg, esp_event_base_t base, int32_t id, void *data) {
         wifi_event_sta_disconnected_t *d = (wifi_event_sta_disconnected_t *)data;
         ESP_LOGW(TAG, "Disconnected (reason=%d) – reconnecting …", d->reason);
 
-        const char *reason = "DISCONNECTED";
-        errsrc_t err = ERRSRC_DISCONNECTED;
+        errsrc_t err = ES_DISCONNECTED;
         switch (d->reason) {
-            case WIFI_REASON_AUTH_EXPIRE:       reason = "AUTH_EXPIRE";  err = ERRSRC_AUTH_EXPIRE;  break;
-            case WIFI_REASON_AUTH_FAIL:         reason = "AUTH_FAIL";    err = ERRSRC_AUTH_FAIL;    break;
-            case WIFI_REASON_NO_AP_FOUND:       reason = "NO_AP";        err = ERRSRC_NO_AP;        break;
-            case WIFI_REASON_HANDSHAKE_TIMEOUT: reason = "4WAY_TIMEOUT"; err = ERRSRC_4WAY_TIMEOUT; break;
-            case WIFI_REASON_ASSOC_EXPIRE:      reason = "ASSOC_EXPIRE"; err = ERRSRC_ASSOC_EXPIRE; break;
-            case WIFI_REASON_BEACON_TIMEOUT:    reason = "BEACON_TO";    err = ERRSRC_BEACON_TO;    break;
-            default:                                                     err = ERRSRC_DISCONNECTED; break;
+            case WIFI_REASON_AUTH_EXPIRE: err = ES_AUTH_EXPIRE; break;
+            case WIFI_REASON_AUTH_FAIL: err = ES_AUTH_FAIL; break;
+            case WIFI_REASON_NO_AP_FOUND: err = ES_NO_AP; break;
+            case WIFI_REASON_HANDSHAKE_TIMEOUT: err = ES_4WAY_TIMEOUT; break;
+            case WIFI_REASON_ASSOC_EXPIRE: err = ES_ASSOC_EXPIRE; break;
+            case WIFI_REASON_BEACON_TIMEOUT: err = ES_BEACON_TO; break;
+            default: err = ES_DISCONNECTED; break;
         }
-        errsrc_set(reason);
+        errsrc_set_enum(err);
         monitor_on_wifi_error(err);
 
         /* CHANGED: schedule backoff reconnect instead of calling esp_wifi_connect() here */
@@ -322,6 +290,18 @@ static void schedule_reconnect(void)
     uint32_t delay_ms = RECONN_BASE_MS << (s_retries < 6 ? s_retries : 6); // up to 32x
     if (delay_ms > RECONN_MAX_MS) delay_ms = RECONN_MAX_MS;
 
+    /* Optional jitter to avoid herd reconnects (centrally tuned in app_cfg.h). */
+#if WIFI_RECONN_JITTER_PCT > 0
+    {
+        uint32_t span = (delay_ms * WIFI_RECONN_JITTER_PCT) / 100U; // e.g., 10%
+        if (span) {
+            uint32_t r   = esp_random();                            // 32-bit RNG
+            int32_t  off = (int32_t)(r % span) - (int32_t)(span / 2U);
+            int32_t  d2  = (int32_t)delay_ms + off;
+            delay_ms = (uint32_t)((d2 < 0) ? 0 : d2);
+        }
+    }
+#endif
     // (re)arm one-shot
     xTimerStop(s_reconn_tmr, 0);
     xTimerChangePeriod(s_reconn_tmr, pdMS_TO_TICKS(delay_ms), 0);

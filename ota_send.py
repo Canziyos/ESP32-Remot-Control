@@ -13,7 +13,7 @@ except Exception:
 # ---------- Config ----------
 ADDR   = os.getenv("LOPY_ADDR", "192.168.10.125")
 PORT   = int(os.getenv("LOPY_PORT", "8080"))
-TOKEN  = os.getenv("LOPY_TOKEN", "abc123")
+TOKEN  = os.getenv("LOPY_TOKEN", "baker")
 DEBUG_BLE = True
 
 CHUNK  = 16 * 1024

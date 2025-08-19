@@ -7,7 +7,7 @@
 #include "esp_partition.h"
 #include "alerts.h"
 #include "bootflag.h"
-#include "errsrc.h"   // for errsrc_t
+#include "errsrc.h"
 
 static const char *TAG = "HEALTH";
 
@@ -77,7 +77,7 @@ static void try_rollback_now(void) {
 void monitor_on_wifi_error(errsrc_t e) {
     if (s_done) return;
 
-    if (e == ERRSRC_NONE) {
+    if (e == ES_NONE) {
         if (s_fail_streak) ESP_LOGI(TAG, "Error cleared. Resetting failure streak from %d.", s_fail_streak);
         s_fail_streak = 0;
         return;

@@ -26,3 +26,13 @@
 #ifndef NVS_KEY_WIFI_PASSWORD
 #define NVS_KEY_WIFI_PASSWORD "password"
 #endif
+/* Wi-Fi reconnect tuning (centralized). */
+#ifndef WIFI_RECONN_BASE_MS
+#define WIFI_RECONN_BASE_MS  500   /* initial delay. */
+#endif
+#ifndef WIFI_RECONN_MAX_MS
+#define WIFI_RECONN_MAX_MS   30000 /* cap at 30s. */
+#endif
+#ifndef WIFI_RECONN_JITTER_PCT
+#define WIFI_RECONN_JITTER_PCT 10  /* ±10% jitter; set 0 to disable. */
+#endif

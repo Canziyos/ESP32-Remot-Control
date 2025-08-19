@@ -209,9 +209,9 @@ static void cmd_setwifi(const char *args, cmd_ctx_t *ctx) {
 static void cmd_errsrc(const char *args, cmd_ctx_t *ctx) {
     (void)args;
     const char *err = errsrc_get(); if (!err) err = "NONE";
+    errsrc_t code = errsrc_get_code();
     sc_mode_t m = syscoord_get_mode();
-
-   replyf(ctx, "mode=%s errsrc=%s\n", mode_to_str(m), err);
+    replyf(ctx, "mode=%s errsrc=%u %s\n", mode_to_str(m), (unsigned)code, err);
 }
 
 /* ---- Command Table ---- */

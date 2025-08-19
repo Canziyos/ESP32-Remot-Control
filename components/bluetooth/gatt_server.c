@@ -21,7 +21,7 @@ static const char *TAG = "BLE_GATT";
 static ble_cmd_t *s_cli = NULL; 
 
 /* ERRSRC notify control */
-static bool errsrc_notify_enabled = false;   // CCC state for ERRSRC.
+static bool es_notify_enabled = false;   // CCC state for ERRSRC.
 static char s_last_errsrc_sent[64] = "";     // last notified value.
 
 /* Properties */
@@ -98,7 +98,7 @@ static void errsrc_notify_if_changed(const char *current_err)
     }
 
     /* Notify only if CCC enabled and we have a connection. */
-    if (errsrc_notify_enabled && g_conn_id != 0xFFFF && g_gatts_if != ESP_GATT_IF_NONE) {
+    if (es_notify_enabled && g_conn_id != 0xFFFF && g_gatts_if != ESP_GATT_IF_NONE) {
         esp_ble_gatts_send_indicate(g_gatts_if, g_conn_id,
                                     gatt_handle_table[IDX_ERRSRC_VAL],
                                     strlen(current_err), (uint8_t *)current_err, false);
@@ -404,7 +404,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             if (param->write.len == 2) {
                 uint16_t cfg = param->write.value[0] | (param->write.value[1] << 8);
                 bool new_enabled = (cfg & 0x0001) != 0;
-                errsrc_notify_enabled = new_enabled;
+                es_notify_enabled = new_enabled;
                 ESP_LOGI(TAG, "ERRSRC notify %s.", new_enabled ? "ENABLED" : "DISABLED");
                 if (new_enabled) {
                     s_last_errsrc_sent[0] = '\0'; // force first push
