@@ -11,6 +11,7 @@ idf_component_register(
     cmd_led.c
     cmd_diag.c
     cmd_ota.c
+    cmd_dht.c
   INCLUDE_DIRS
     "include"
   PRIV_REQUIRES

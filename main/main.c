@@ -9,6 +9,8 @@
 #include "led.h"
 #include "wifi.h"
 #include "bootflag.h"
+#include "dht.h"
+#include "app_cfg.h"
 
 void app_main(void) {
     // sdkconfig's global verbosity (Menuconfig => Log output => Default log verbosity).
@@ -29,8 +31,16 @@ void app_main(void) {
         bootflag_set_post_rollback(false);
     }
 
+    dht_cfg_t dcfg = {
+        .gpio = APP_DHT_GPIO,
+        .period_ms = APP_DHT_PERIOD_MS,
+    };
+    ESP_ERROR_CHECK(dht_init(&dcfg));
+    ESP_ERROR_CHECK(dht_start());
+
     syscoord_init();
     cmd_bus_init();
+    cmd_router_start(); 
     led_task_start();
 
     // Use saved credentials from NVS.

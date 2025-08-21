@@ -25,7 +25,7 @@ typedef struct cmd_ctx_t {
     cmd_write_fn write;  // must be set by transport
 } cmd_ctx_t;
 
-// Handy initializers (optional)
+// initializers.
 #define CMD_CTX_INIT_TCP(fd, write_fn) ((cmd_ctx_t){ \
     .authed=false, .xport=CMD_XPORT_TCP, .u.tcp_fd=(fd), .write=(write_fn) })
 

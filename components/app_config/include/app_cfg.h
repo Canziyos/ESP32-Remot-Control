@@ -46,3 +46,11 @@
 #ifndef OTA_YIELD_BYTES
 #define OTA_YIELD_BYTES      (64*1024)
 #endif
+
+// --- DHT sensor defaults ---
+#ifndef APP_DHT_GPIO
+#define APP_DHT_GPIO        13
+#endif
+#ifndef APP_DHT_PERIOD_MS
+#define APP_DHT_PERIOD_MS   2000
+#endif

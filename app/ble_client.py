@@ -1,16 +1,16 @@
 import asyncio, struct, zlib, time
 from typing import Optional, Tuple
 from . import config as C
-from utils import stop_notify_quiet, is_wifi_ok, resolve_by_prefix
+from utils import stop_notify_quiet, is_wifi_ok, resolve_by_prefix, resolve_by_suffix
 
-# Optional BLE import (keep same behavior)
+# BLE import (keep same behavior)
 try:
     from bleak import BleakClient, BleakScanner
     from bleak.backends.device import BLEDevice
     BLE_AVAILABLE = True
 except Exception:
     BLE_AVAILABLE = False
-    BLEDevice = object  # type: ignore
+    BLEDevice = object
 
 # ---------- Small helpers ---------- #
 async def quick_ble_seen(timeout: float) -> bool:
@@ -178,11 +178,15 @@ async def ble_session() -> bool:
             print("[BLE] Services not visible; disconnecting.")
             return False
 
-        rx_uuid, tx_uuid, wifi_uuid, err_uuid, alert_uuid, ota_ctrl_uuid, ota_data_uuid = \
-            resolve_by_prefix(
-                svcs,
-                [C.RX_PREFIX, C.TX_PREFIX, C.WIFI_PREFIX, C.ERR_PREFIX, C.ALERT_PREFIX, C.OTA_CTRL_PREFIX, C.OTA_DATA_PREFIX]
-            )
+        # Include DHT prefix at the end; if device doesn't expose it, dht_uuid will be None.
+        (rx_uuid, tx_uuid, wifi_uuid, err_uuid, alert_uuid, ota_ctrl_uuid, ota_data_uuid) = resolve_by_prefix(
+            svcs,
+            [C.RX_PREFIX, C.TX_PREFIX, C.WIFI_PREFIX, C.ERR_PREFIX, C.ALERT_PREFIX, C.OTA_CTRL_PREFIX, C.OTA_DATA_PREFIX]
+        )
+        # Try to resolve DHT by prefix; fall back to suffix if needed.
+        dht_uuid = resolve_by_prefix(svcs, [C.DHT_PREFIX])[0]
+        if not dht_uuid and getattr(C, "DHT_SUFFIX", None):
+            dht_uuid = resolve_by_suffix(svcs, C.DHT_SUFFIX)
 
         if not (rx_uuid and tx_uuid and wifi_uuid and err_uuid):
             print("[BLE] Could not resolve expected characteristics by prefix.")
@@ -195,7 +199,6 @@ async def ble_session() -> bool:
                     props = ",".join(sorted(getattr(c, "properties", []) or []))
                     print(f"       char: {c.uuid}  props=[{props}]")
 
-        # Enable notifications
         notify_ok = False
         try:
             await client.start_notify(tx_uuid, _notify)
@@ -213,6 +216,20 @@ async def ble_session() -> bool:
             print("[BLE] Notify on TX (and ERRSRC/ALERT if present).")
         except Exception:
             print("[BLE] Notify start failed; continuing without notify.")
+        
+        # --- DHT: read once (and optionally subscribe) ---
+        if dht_uuid:
+            try:
+                val = await client.read_gatt_char(dht_uuid)
+                txt = (val.decode(errors="ignore") or "").strip()
+                print(f"[BLE] DHT initial: {txt or repr(val)}")
+                # live updates (no-op until firmware starts notifying)
+                try:
+                    await client.start_notify(dht_uuid, _notify)
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"[BLE] DHT read failed: {e}")
 
         # AUTH
         try:
@@ -251,6 +268,7 @@ async def ble_session() -> bool:
             if low in ("/q", "/quit", "exit"):
                 break
 
+            # BLE-OTA
             if low.startswith(("/ota ", "ota ")):
                 import pathlib
                 path_str = line.split(None, 1)[1] if len(line.split(None, 1)) == 2 else ""
@@ -268,6 +286,7 @@ async def ble_session() -> bool:
                     return False
                 return False
 
+            # SETWIFI passthrough
             if low.startswith(("/setwifi ", "setwifi ")):
                 parts = line.split(maxsplit=2)
                 if len(parts) == 3:
@@ -286,13 +305,29 @@ async def ble_session() -> bool:
                         await asyncio.wait_for(wifi_ok_event.wait(), timeout=20.0)
                         print("[BLE] Wi-Fi is up. Switching to TCP...")
                         if notify_ok:
-                            await stop_notify_quiet(client, tx_uuid, err_uuid, alert_uuid)
+                            await stop_notify_quiet(client, tx_uuid, err_uuid, alert_uuid, dht_uuid)
                         return True
                     except asyncio.TimeoutError:
                         print("[BLE] Wi-Fi not up yet; staying in BLE.")
                         continue
                 else:
                     print("usage: SETWIFI <ssid> <pwd>")
+                continue
+
+            # Manual one-shot DHT read (works even if you didn't enable DHT notify)
+            if low in ("dht", "dht?", "/dht"):
+                if dht_uuid:
+                    try:
+                        data = await client.read_gatt_char(dht_uuid)
+                        try:
+                            msg = data.decode(errors="ignore").strip()
+                        except Exception:
+                            msg = repr(data)
+                        print(f"[BLE][DHT] {msg if msg else '<empty>'}")
+                    except Exception as e:
+                        print(f"[BLE] DHT read failed: {e}")
+                else:
+                    print("[BLE] Device has no DHT characteristic.")
                 continue
 
             # Default: command to RX
@@ -317,6 +352,7 @@ async def ble_session() -> bool:
                 break
 
         if notify_ok:
-            await stop_notify_quiet(client, tx_uuid, err_uuid, alert_uuid)
+            await stop_notify_quiet(client, tx_uuid, err_uuid, alert_uuid, dht_uuid)
+        
 
     return False

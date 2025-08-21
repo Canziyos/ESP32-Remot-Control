@@ -10,9 +10,10 @@
 #include "errsrc.h"
 #include "syscoord.h"
 #include "ota_bridge.h"      // ctrl/data/disconnect hooks for OTA over GATT
+#include "dht.h"            // <-- DHT latest reading
 
 #include "gatt_server.h"
-#include "gatt_priv.h"         // internal helpers, handle table, flags, etc.
+#include "gatt_priv.h"      // internal helpers, handle table, flags, etc.
 
 static const char *TAG = "GATT.srv";
 
@@ -27,14 +28,19 @@ uint16_t g_mtu_payload = 20;
 bool tx_notify_enabled = false;
 bool es_notify_enabled = false;
 bool alert_notify_enabled = false;
+/* dht notify gate */
+bool dht_notify_enabled = false;
 
 uint16_t gatt_handle_table[EFBE_IDX_NB];
 uint8_t cccd_tx_val[2] = {0,0};
 uint8_t cccd_err_val[2] = {0,0};
 uint8_t cccd_alert_val[2] = {0,0};
+/* CCC storage for DHT char */
+uint8_t cccd_dht_val[2] = {0,0};
 
 ble_cmd_t *g_ble_cli = NULL;
 
+/* Helpers to refresh readable values just before a READ/NOTIFY */
 static void on_read_errsrc(void) {
     const char *err = errsrc_get();
     if (!err) err = "NONE";
@@ -54,6 +60,24 @@ static void on_read_alert(void) {
     esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_ALERT_VAL],
                                  (uint16_t)used,
                                  (const uint8_t*)line);
+}
+
+/* NEW: build+set the DHT readout string */
+static uint16_t on_read_dht_and_len(const uint8_t **out_ptr_opt, uint8_t *tmp_buf, uint16_t tmp_sz) {
+    dht_sample_t s; dht_read_latest(&s);
+    int n;
+    if (s.valid) {
+        n = snprintf((char*)tmp_buf, tmp_sz, "DHT T=%.1fC RH=%.1f%% age=%ums",
+                     (double)s.temp_c, (double)s.rh, (unsigned)s.age_ms);
+    } else {
+        n = snprintf((char*)tmp_buf, tmp_sz, "DHT NA");
+    }
+    if (n < 0) n = 0;
+    if (n > (int)tmp_sz) n = (int)tmp_sz;
+    esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_DHT_VAL],
+                                 (uint16_t)n, (const uint8_t*)tmp_buf);
+    if (out_ptr_opt) *out_ptr_opt = tmp_buf;
+    return (uint16_t)n;
 }
 
 /* ---- GATTS dispatcher ---- */
@@ -91,12 +115,17 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
             on_read_errsrc();
         } else if (param->read.handle == gatt_handle_table[IDX_ALERT_VAL]) {
             on_read_alert();
+        } else if (param->read.handle == gatt_handle_table[IDX_DHT_VAL]) {
+            /* refresh dht value on explicit read */
+            uint8_t tmp[64];
+            (void)on_read_dht_and_len(NULL, tmp, sizeof(tmp));
         }
         break;
 
     case ESP_GATTS_CONNECT_EVT:
         g_conn_id = param->connect.conn_id;
         tx_notify_enabled = es_notify_enabled = alert_notify_enabled = false;
+        dht_notify_enabled = false;                     /* NEW */
         syscoord_on_ble_state(true);
         ble_set_connected(true);
         if (g_ble_cli) {
@@ -111,6 +140,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
         if (g_ble_cli) ble_cmd_on_disconnect(g_ble_cli);
         g_conn_id = 0xFFFF;
         tx_notify_enabled = es_notify_enabled = alert_notify_enabled = false;
+        dht_notify_enabled = false;                     /* NEW */
         break;
 
     case ESP_GATTS_WRITE_EVT:
@@ -136,6 +166,18 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
                 gatt_alert_notify(&snap);
             }
 
+        /* DHt CCC enable/disable + immediate notify of latest value */
+        } else if (param->write.handle == gatt_handle_table[IDX_DHT_CCC]) {
+            dht_notify_enabled = (gatt_ccc_decode(param->write.value, param->write.len) & 0x0001) != 0;
+            if (dht_notify_enabled) {
+                uint8_t tmp[64];
+                const uint8_t *p = NULL;
+                uint16_t n = on_read_dht_and_len(&p, tmp, sizeof(tmp));
+                (void)esp_ble_gatts_send_indicate(g_gatts_if, g_conn_id,
+                                                  gatt_handle_table[IDX_DHT_VAL],
+                                                  n, (uint8_t*)p, false);
+            }
+
         } else if (param->write.handle == gatt_handle_table[IDX_OTA_CTRL_VAL]) {
             ble_ota_on_ctrl_write(param->write.value, param->write.len);
 
@@ -150,7 +192,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
 }
 
 void gatt_server_init(void)
-{   
+{
     ESP_ERROR_CHECK(esp_ble_gatts_register_callback(gatts_event_handler));
     ESP_ERROR_CHECK(esp_ble_gatts_app_register(0x42));
 

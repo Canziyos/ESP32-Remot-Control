@@ -4,25 +4,25 @@
 #include "esp_err.h"
 #include "esp_gatts_api.h"
 
-#include "ble_ids.h"    // SERVICE_UUID, RX_UUID, TX_UUID ...
+#include "ble_ids.h"    // SERVICE_UUID, RX_UUID, TX_UUID, DHT_UUID, ...
 #include "gatt_priv.h"
 
 static const char *TAG = "GATT.attrs";
 
 /* Properties (constant) */
-static const uint8_t rx_props = ESP_GATT_CHAR_PROP_BIT_WRITE_NR | ESP_GATT_CHAR_PROP_BIT_WRITE;
-static const uint8_t tx_props = ESP_GATT_CHAR_PROP_BIT_NOTIFY  | ESP_GATT_CHAR_PROP_BIT_READ;
-static const uint8_t wifi_props = ESP_GATT_CHAR_PROP_BIT_WRITE;
-static const uint8_t errsrc_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-static const uint8_t alert_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static const uint8_t rx_props       = ESP_GATT_CHAR_PROP_BIT_WRITE_NR | ESP_GATT_CHAR_PROP_BIT_WRITE;
+static const uint8_t tx_props       = ESP_GATT_CHAR_PROP_BIT_NOTIFY  | ESP_GATT_CHAR_PROP_BIT_READ;
+static const uint8_t wifi_props     = ESP_GATT_CHAR_PROP_BIT_WRITE;
+static const uint8_t errsrc_props   = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static const uint8_t alert_props    = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
 static const uint8_t ota_ctrl_props = ESP_GATT_CHAR_PROP_BIT_WRITE;      // write with response
 static const uint8_t ota_data_props = ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
+static const uint8_t dht_props   = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
 
 /* 16-bit helper UUIDs */
-static uint16_t primary_service_uuid = ESP_GATT_UUID_PRI_SERVICE;
-static uint16_t character_declaration_uuid = ESP_GATT_UUID_CHAR_DECLARE;
+static uint16_t primary_service_uuid         = ESP_GATT_UUID_PRI_SERVICE;
+static uint16_t character_declaration_uuid   = ESP_GATT_UUID_CHAR_DECLARE;
 static uint16_t character_client_config_uuid = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
-
 
 uint16_t gatt_ccc_decode(const uint8_t *val, uint16_t len)
 {
@@ -135,6 +135,24 @@ void gatt_build_attr_table(esp_gatt_if_t gatts_if)
         {ESP_UUID_LEN_128, (uint8_t *)UUID_EFBE_OTA_DATA, ESP_GATT_PERM_WRITE, 512, 0, NULL}
     };
 
+    /* --- DHT characteristic --- */
+    db[IDX_DHT_CHAR] = (esp_gatts_attr_db_t){
+        {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
+         sizeof(uint8_t), sizeof(uint8_t), (uint8_t *)&dht_props}
+    };
+    db[IDX_DHT_VAL] = (esp_gatts_attr_db_t){
+        {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_128, (uint8_t *)DHT_UUID, ESP_GATT_PERM_READ, 64, 0, NULL}
+    };
+    db[IDX_DHT_CCC] = (esp_gatts_attr_db_t){
+        {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid,
+         ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+         sizeof(cccd_dht_val), sizeof(cccd_dht_val), cccd_dht_val}
+    };
+    /* --- END DHT sensor --- */
+
     esp_err_t e = esp_ble_gatts_create_attr_tab(db, gatts_if, EFBE_IDX_NB, 0);
     if (e != ESP_OK) {
         ESP_LOGE(TAG, "create_attr_tab: %s", esp_err_to_name(e));
@@ -148,9 +166,10 @@ void gatt_on_attr_table_created(esp_ble_gatts_cb_param_t *param)
     {
         memcpy(gatt_handle_table, param->add_attr_tab.handles, sizeof(gatt_handle_table));
 
-        const char *init = "OK";
+        const char *init  = "OK";
         const char *einit = "NONE";
         const char *ainit = "ALERT seq=0 code=0";
+        const char *sinit = "DHT NA";  // NEW
 
         esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_TX_VAL],
                                      (uint16_t)strlen(init),  (const uint8_t*)init);
@@ -158,6 +177,8 @@ void gatt_on_attr_table_created(esp_ble_gatts_cb_param_t *param)
                                      (uint16_t)strlen(einit), (const uint8_t*)einit);
         esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_ALERT_VAL],
                                      (uint16_t)strlen(ainit), (const uint8_t*)ainit);
+        esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_DHT_VAL],
+                                     (uint16_t)strlen(sinit), (const uint8_t*)sinit);
 
         esp_ble_gatts_start_service(gatt_handle_table[IDX_SVC]);
     } else {

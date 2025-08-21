@@ -24,7 +24,8 @@ ERR_PREFIX = "efbe0400"
 ALERT_PREFIX = "efbe0500"
 OTA_CTRL_PREFIX = "efbe0600"
 OTA_DATA_PREFIX = "efbe0700"
-
+DHT_PREFIX = "efbe0800-"
+DHT_SUFFIX = "efbe0800"   # fallback match
 # BLE identity.
 BLE_ADV_NAMES = [n.strip() for n in os.getenv("LOPY_BLE_NAMES", "LoPy4").split(",") if n.strip()]
 BLE_ADDR = (os.getenv("LOPY_BLE_ADDR", "") or "").replace("-", ":").upper()

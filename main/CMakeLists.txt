@@ -7,6 +7,7 @@ idf_component_register(
     cmd             # components/cmd.
     led             # components/led.
     bootflag        # components/bootflag.
+    app_config      # components/app_config.
   PRIV_REQUIRES
     nvs_flash
     app_update

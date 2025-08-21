@@ -14,5 +14,5 @@ idf_component_register(
     priv/ota_bridge.c          
   INCLUDE_DIRS "include"       # public headers (visible to other components)
   PRIV_INCLUDE_DIRS "priv"     # private headers (only for this component)
-  REQUIRES bt ota syscoord cmd errsrc alerts
+  REQUIRES bt ota syscoord cmd errsrc alerts dht
 )
