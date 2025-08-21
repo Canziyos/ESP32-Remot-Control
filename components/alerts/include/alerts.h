@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+
 typedef enum {
     ALERT_NONE = 0,
     ALERT_OTA_APPLY_FAIL,

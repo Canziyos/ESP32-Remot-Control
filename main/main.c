@@ -6,11 +6,12 @@
 #include "esp_partition.h"
 #include "syscoord.h"
 #include "command_bus.h"
-#include "led.h"
 #include "wifi.h"
 #include "bootflag.h"
-#include "dht.h"
 #include "app_cfg.h"
+#include "cmd_router.h"
+#include "led.h"
+#include "dht.h"
 
 void app_main(void) {
     // sdkconfig's global verbosity (Menuconfig => Log output => Default log verbosity).
@@ -31,17 +32,17 @@ void app_main(void) {
         bootflag_set_post_rollback(false);
     }
 
-    dht_cfg_t dcfg = {
-        .gpio = APP_DHT_GPIO,
-        .period_ms = APP_DHT_PERIOD_MS,
-    };
-    ESP_ERROR_CHECK(dht_init(&dcfg));
-    ESP_ERROR_CHECK(dht_start());
-
-    syscoord_init();
+    syscoord_init();  // System coordination.
+    // Command routing.
     cmd_bus_init();
-    cmd_router_start(); 
-    led_task_start();
+    cmd_router_start();
+    // DHT sampler.
+    dht_cfg_t dcfg = {.gpio = APP_DHT_GPIO, .period_ms = APP_DHT_PERIOD_MS};
+    ESP_ERROR_CHECK(dht_init(&dcfg));
+    ESP_ERROR_CHECK(dht_start()); 
+
+    // LED driver init (no task needed for simple on/off).
+    ESP_ERROR_CHECK(led_init());
 
     // Use saved credentials from NVS.
     // wifi_start("ssid", "password");

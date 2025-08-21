@@ -10,7 +10,7 @@
 #include "errsrc.h"
 #include "syscoord.h"
 #include "ota_bridge.h"      // ctrl/data/disconnect hooks for OTA over GATT
-#include "dht.h"            // <-- DHT latest reading
+#include "dht.h"            // DHT latest reading
 
 #include "gatt_server.h"
 #include "gatt_priv.h"      // internal helpers, handle table, flags, etc.
@@ -62,7 +62,7 @@ static void on_read_alert(void) {
                                  (const uint8_t*)line);
 }
 
-/* NEW: build+set the DHT readout string */
+/* build+set the DHT readout string */
 static uint16_t on_read_dht_and_len(const uint8_t **out_ptr_opt, uint8_t *tmp_buf, uint16_t tmp_sz) {
     dht_sample_t s; dht_read_latest(&s);
     int n;
@@ -125,7 +125,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
     case ESP_GATTS_CONNECT_EVT:
         g_conn_id = param->connect.conn_id;
         tx_notify_enabled = es_notify_enabled = alert_notify_enabled = false;
-        dht_notify_enabled = false;                     /* NEW */
+        dht_notify_enabled = false;  
         syscoord_on_ble_state(true);
         ble_set_connected(true);
         if (g_ble_cli) {
@@ -140,51 +140,56 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
         if (g_ble_cli) ble_cmd_on_disconnect(g_ble_cli);
         g_conn_id = 0xFFFF;
         tx_notify_enabled = es_notify_enabled = alert_notify_enabled = false;
-        dht_notify_enabled = false;                     /* NEW */
+        dht_notify_enabled = false; 
         break;
 
-    case ESP_GATTS_WRITE_EVT:
-        if (param->write.handle == gatt_handle_table[IDX_RX_VAL]) {
+    case ESP_GATTS_WRITE_EVT: {
+        uint16_t h = param->write.handle;
+
+        if (h == gatt_handle_table[IDX_RX_VAL]) {
             if (g_ble_cli) ble_cmd_on_rx(g_ble_cli, param->write.value, param->write.len);
 
-        } else if (param->write.handle == gatt_handle_table[IDX_WIFI_VAL]) {
+        } else if (h == gatt_handle_table[IDX_WIFI_VAL]) {
             gatt_on_wifi_cred_write(param->write.value, param->write.len);
 
-        } else if (param->write.handle == gatt_handle_table[IDX_TX_CCC]) {
+        } else if (h == gatt_handle_table[IDX_TX_CCC]) {
             tx_notify_enabled = (gatt_ccc_decode(param->write.value, param->write.len) & 0x0001) != 0;
 
-        } else if (param->write.handle == gatt_handle_table[IDX_ERRSRC_CCC]) {
+        } else if (h == gatt_handle_table[IDX_ERRSRC_CCC]) {
             es_notify_enabled = (gatt_ccc_decode(param->write.value, param->write.len) & 0x0001) != 0;
             if (es_notify_enabled) {
                 gatt_server_notify_errsrc(errsrc_get());
             }
 
-        } else if (param->write.handle == gatt_handle_table[IDX_ALERT_CCC]) {
+        } else if (h == gatt_handle_table[IDX_ALERT_CCC]) {
             alert_notify_enabled = (gatt_ccc_decode(param->write.value, param->write.len) & 0x0001) != 0;
             if (alert_notify_enabled) {
                 alert_record_t snap; alert_latest(&snap);
                 gatt_alert_notify(&snap);
             }
 
-        /* DHt CCC enable/disable + immediate notify of latest value */
-        } else if (param->write.handle == gatt_handle_table[IDX_DHT_CCC]) {
+        } else if (h == gatt_handle_table[IDX_DHT_CCC]) {
+            /* DHT CCC enable/disable + immediate notify of latest value */
             dht_notify_enabled = (gatt_ccc_decode(param->write.value, param->write.len) & 0x0001) != 0;
             if (dht_notify_enabled) {
                 uint8_t tmp[64];
                 const uint8_t *p = NULL;
                 uint16_t n = on_read_dht_and_len(&p, tmp, sizeof(tmp));
+                if (n > g_mtu_payload) n = g_mtu_payload;  // clamp to negotiated ATT payload.
                 (void)esp_ble_gatts_send_indicate(g_gatts_if, g_conn_id,
-                                                  gatt_handle_table[IDX_DHT_VAL],
-                                                  n, (uint8_t*)p, false);
+                                                gatt_handle_table[IDX_DHT_VAL],
+                                                n, (uint8_t*)p, false);
             }
 
-        } else if (param->write.handle == gatt_handle_table[IDX_OTA_CTRL_VAL]) {
+        } else if (h == gatt_handle_table[IDX_OTA_CTRL_VAL]) {
             ble_ota_on_ctrl_write(param->write.value, param->write.len);
 
-        } else if (param->write.handle == gatt_handle_table[IDX_OTA_DATA_VAL]) {
+        } else if (h == gatt_handle_table[IDX_OTA_DATA_VAL]) {
             ble_ota_on_data_write(param->write.value, param->write.len);
         }
         break;
+    }
+
 
     default:
         break;

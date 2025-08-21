@@ -11,21 +11,21 @@ static char s_last_errsrc_sent[64] = "";
 static void errsrc_notify_if_changed(const char *current_err) {
     if (!current_err) current_err = "NONE";
 
+    size_t used = strnlen(current_err, sizeof(s_last_errsrc_sent) - 1); // <=63
+
     if (g_gatts_if != ESP_GATT_IF_NONE && gatt_handle_table[IDX_ERRSRC_VAL]) {
         esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_ERRSRC_VAL],
-                                     (uint16_t)strlen(current_err),
+                                     (uint16_t)used,
                                      (const uint8_t*)current_err);
     }
 
-    if (strncmp(current_err, s_last_errsrc_sent, sizeof(s_last_errsrc_sent)) == 0) {
-        return;
-    }
+    if (strncmp(current_err, s_last_errsrc_sent, sizeof(s_last_errsrc_sent)) == 0) return;
 
     if (es_notify_enabled && g_conn_id != 0xFFFF && g_gatts_if != ESP_GATT_IF_NONE) {
+        uint16_t send_len = (uint16_t)((used > (size_t)g_mtu_payload) ? g_mtu_payload : used);
         esp_ble_gatts_send_indicate(g_gatts_if, g_conn_id,
                                     gatt_handle_table[IDX_ERRSRC_VAL],
-                                    (uint16_t)strlen(current_err),
-                                    (uint8_t *)current_err, false);
+                                    send_len, (uint8_t *)current_err, false);
     }
 
     strncpy(s_last_errsrc_sent, current_err, sizeof(s_last_errsrc_sent) - 1);
@@ -62,27 +62,33 @@ void gatt_server_send_status(const char *s) {
                                 1, (uint8_t *)&nl, false);
 }
 
-/* Match the private header prototype exactly (avoids mismatch warnings). */
 void gatt_alert_notify(const void *rec_any) {
     const alert_record_t *rec = (const alert_record_t *)rec_any;
     if (!rec) return;
 
+    size_t dlen = strnlen(rec->detail, ALERT_DETAIL_MAX);
     char line[128];
-    int n = snprintf(line, sizeof(line), "ALERT seq=%u code=%u %s",
-                     (unsigned)rec->seq, (unsigned)rec->code, rec->detail);
+    int n = snprintf(line, sizeof(line), "ALERT seq=%u code=%u %.*s",
+                     (unsigned)rec->seq, (unsigned)rec->code,
+                     (int)dlen, rec->detail);
     if (n < 0) n = 0;
-    size_t used = strnlen(line, sizeof(line));
+    size_t used = (size_t)n;
 
     if (g_gatts_if != ESP_GATT_IF_NONE && gatt_handle_table[IDX_ALERT_VAL]) {
         esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_ALERT_VAL],
                                      (uint16_t)used, (const uint8_t*)line);
     }
+
+    /* Clamp to negotiated ATT payload (g_mtu_payload). */
+    uint16_t send_len = (uint16_t)((used > (size_t)g_mtu_payload) ? g_mtu_payload : used);
+
     if (alert_notify_enabled && g_conn_id != 0xFFFF && g_gatts_if != ESP_GATT_IF_NONE) {
         esp_ble_gatts_send_indicate(g_gatts_if, g_conn_id,
                                     gatt_handle_table[IDX_ALERT_VAL],
-                                    (uint16_t)used, (uint8_t*)line, false);
+                                    send_len, (uint8_t*)line, false);
     }
 }
+
 
 void gatt_server_notify_errsrc(const char *err) {
     if (!err || !*err) err = "NONE";

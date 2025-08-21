@@ -2,8 +2,8 @@ import os
 import pathlib
 
 # ---------- Config ----------
-ADDR   = os.getenv("LOPY_ADDR", "192.168.10.125")
-PORT   = int(os.getenv("LOPY_PORT", "8080"))
+ADDR = os.getenv("LOPY_ADDR", "192.168.10.125")
+PORT = int(os.getenv("LOPY_PORT", "8080"))
 TOKEN  = os.getenv("LOPY_TOKEN", "baker")
 DEBUG_BLE = True if os.getenv("LOPY_DEBUG_BLE", "1").strip() not in ("0","false","False") else False
 

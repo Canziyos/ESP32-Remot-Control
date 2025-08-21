@@ -793,6 +793,42 @@ CONFIG_BT_ALARM_MAX_NUM=50
 # CONFIG_BLE_MESH is not set
 
 #
+# Driver Configurations
+#
+
+#
+# Legacy TWAI Driver Configurations
+#
+# CONFIG_TWAI_SKIP_LEGACY_CONFLICT_CHECK is not set
+CONFIG_TWAI_ERRATA_FIX_BUS_OFF_REC=y
+CONFIG_TWAI_ERRATA_FIX_TX_INTR_LOST=y
+CONFIG_TWAI_ERRATA_FIX_RX_FRAME_INVALID=y
+CONFIG_TWAI_ERRATA_FIX_RX_FIFO_CORRUPT=y
+CONFIG_TWAI_ERRATA_FIX_LISTEN_ONLY_DOM=y
+# end of Legacy TWAI Driver Configurations
+
+#
+# Legacy RMT Driver Configurations
+#
+# CONFIG_RMT_SUPPRESS_DEPRECATE_WARN is not set
+# CONFIG_RMT_SKIP_LEGACY_CONFLICT_CHECK is not set
+# end of Legacy RMT Driver Configurations
+
+#
+# Legacy I2C Driver Configurations
+#
+# CONFIG_I2C_SKIP_LEGACY_CONFLICT_CHECK is not set
+# end of Legacy I2C Driver Configurations
+
+#
+# Legacy Touch Sensor Driver Configurations
+#
+# CONFIG_TOUCH_SUPPRESS_DEPRECATE_WARN is not set
+# CONFIG_TOUCH_SKIP_LEGACY_CONFLICT_CHECK is not set
+# end of Legacy Touch Sensor Driver Configurations
+# end of Driver Configurations
+
+#
 # eFuse Bit Manager
 #
 # CONFIG_EFUSE_CUSTOM_TABLE is not set
@@ -819,11 +855,97 @@ CONFIG_ESP_ERR_TO_NAME_LOOKUP=y
 # end of Common ESP-related
 
 #
+# ESP-Driver:DAC Configurations
+#
+# CONFIG_DAC_CTRL_FUNC_IN_IRAM is not set
+# CONFIG_DAC_ISR_IRAM_SAFE is not set
+# CONFIG_DAC_ENABLE_DEBUG_LOG is not set
+CONFIG_DAC_DMA_AUTO_16BIT_ALIGN=y
+# end of ESP-Driver:DAC Configurations
+
+#
 # ESP-Driver:GPIO Configurations
 #
 # CONFIG_GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL is not set
 # CONFIG_GPIO_CTRL_FUNC_IN_IRAM is not set
 # end of ESP-Driver:GPIO Configurations
+
+#
+# ESP-Driver:GPTimer Configurations
+#
+CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM=y
+# CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM is not set
+# CONFIG_GPTIMER_ISR_CACHE_SAFE is not set
+CONFIG_GPTIMER_OBJ_CACHE_SAFE=y
+# CONFIG_GPTIMER_ENABLE_DEBUG_LOG is not set
+# end of ESP-Driver:GPTimer Configurations
+
+#
+# ESP-Driver:I2C Configurations
+#
+# CONFIG_I2C_ISR_IRAM_SAFE is not set
+# CONFIG_I2C_ENABLE_DEBUG_LOG is not set
+CONFIG_I2C_MASTER_ISR_HANDLER_IN_IRAM=y
+# end of ESP-Driver:I2C Configurations
+
+#
+# ESP-Driver:I2S Configurations
+#
+# CONFIG_I2S_ISR_IRAM_SAFE is not set
+# CONFIG_I2S_CTRL_FUNC_IN_IRAM is not set
+# CONFIG_I2S_ENABLE_DEBUG_LOG is not set
+# end of ESP-Driver:I2S Configurations
+
+#
+# ESP-Driver:LEDC Configurations
+#
+# CONFIG_LEDC_CTRL_FUNC_IN_IRAM is not set
+# end of ESP-Driver:LEDC Configurations
+
+#
+# ESP-Driver:MCPWM Configurations
+#
+CONFIG_MCPWM_ISR_HANDLER_IN_IRAM=y
+# CONFIG_MCPWM_ISR_CACHE_SAFE is not set
+# CONFIG_MCPWM_CTRL_FUNC_IN_IRAM is not set
+CONFIG_MCPWM_OBJ_CACHE_SAFE=y
+# CONFIG_MCPWM_ENABLE_DEBUG_LOG is not set
+# end of ESP-Driver:MCPWM Configurations
+
+#
+# ESP-Driver:PCNT Configurations
+#
+# CONFIG_PCNT_CTRL_FUNC_IN_IRAM is not set
+# CONFIG_PCNT_ISR_IRAM_SAFE is not set
+# CONFIG_PCNT_ENABLE_DEBUG_LOG is not set
+# end of ESP-Driver:PCNT Configurations
+
+#
+# ESP-Driver:RMT Configurations
+#
+CONFIG_RMT_ENCODER_FUNC_IN_IRAM=y
+CONFIG_RMT_TX_ISR_HANDLER_IN_IRAM=y
+CONFIG_RMT_RX_ISR_HANDLER_IN_IRAM=y
+# CONFIG_RMT_RECV_FUNC_IN_IRAM is not set
+# CONFIG_RMT_TX_ISR_CACHE_SAFE is not set
+# CONFIG_RMT_RX_ISR_CACHE_SAFE is not set
+CONFIG_RMT_OBJ_CACHE_SAFE=y
+# CONFIG_RMT_ENABLE_DEBUG_LOG is not set
+# CONFIG_RMT_ISR_IRAM_SAFE is not set
+# end of ESP-Driver:RMT Configurations
+
+#
+# ESP-Driver:Sigma Delta Modulator Configurations
+#
+# CONFIG_SDM_CTRL_FUNC_IN_IRAM is not set
+# CONFIG_SDM_ENABLE_DEBUG_LOG is not set
+# end of ESP-Driver:Sigma Delta Modulator Configurations
+
+#
+# ESP-Driver:SD Host SDMMC Controller Configurations
+#
+# CONFIG_SD_HOST_SDMMC_ISR_CACHE_SAFE is not set
+# end of ESP-Driver:SD Host SDMMC Controller Configurations
 
 #
 # ESP-Driver:SPI Configurations
@@ -833,6 +955,14 @@ CONFIG_SPI_MASTER_ISR_IN_IRAM=y
 # CONFIG_SPI_SLAVE_IN_IRAM is not set
 CONFIG_SPI_SLAVE_ISR_IN_IRAM=y
 # end of ESP-Driver:SPI Configurations
+
+#
+# ESP-Driver:TWAI Configurations
+#
+# CONFIG_TWAI_ISR_IN_IRAM is not set
+# CONFIG_TWAI_ISR_CACHE_SAFE is not set
+# CONFIG_TWAI_ENABLE_DEBUG_LOG is not set
+# end of ESP-Driver:TWAI Configurations
 
 #
 # ESP-Driver:UART Configurations
@@ -2161,6 +2291,8 @@ CONFIG_BLE_ADV_REPORT_DISCARD_THRSHOLD=20
 CONFIG_SW_COEXIST_ENABLE=y
 CONFIG_ESP32_WIFI_SW_COEXIST_ENABLE=y
 CONFIG_ESP_WIFI_SW_COEXIST_ENABLE=y
+# CONFIG_GPTIMER_ISR_IRAM_SAFE is not set
+# CONFIG_MCPWM_ISR_IRAM_SAFE is not set
 # CONFIG_EVENT_LOOP_PROFILING is not set
 CONFIG_POST_EVENTS_FROM_ISR=y
 CONFIG_POST_EVENTS_FROM_IRAM_ISR=y

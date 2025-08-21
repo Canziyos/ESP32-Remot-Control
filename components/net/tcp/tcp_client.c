@@ -86,6 +86,8 @@ static void client_task(void *arg) {
         log_sanitized_line(line);
         cmd_dispatch_line(line, linelen, &ctx);
     }
+    /*Stop any late router replies for this client */
+    ctx.write = NULL;
 
     shutdown(fd, SHUT_RDWR);
     close(fd);

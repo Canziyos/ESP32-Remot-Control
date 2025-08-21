@@ -8,11 +8,7 @@
 
 #include <stdio.h>
 
-static volatile bool s_dht_stream_on = false;
-static volatile uint32_t s_dht_stream_ms = 0;
-
 static void cmd_router_task(void *pv) {
-    (void)pv;
     cmd_msg_t m;
 
     for (;;) {
@@ -51,29 +47,24 @@ static void cmd_router_task(void *pv) {
         case CMD_DHT_STREAM_ON: {
             uint32_t every_ms = m.u32 ? m.u32 : 0;
             dht_set_stream(true, every_ms);
-            s_dht_stream_on = true;
-            if (every_ms) s_dht_stream_ms = every_ms;
             if (m.ctx) cmd_reply(m.ctx, "DHTSTREAM ON\n");
             break;
         }
 
         case CMD_DHT_STREAM_OFF:
             dht_set_stream(false, 0);
-            s_dht_stream_on = false;
             if (m.ctx) cmd_reply(m.ctx, "DHTSTREAM OFF\n");
             break;
 
         case CMD_DHT_STATE: {
-            dht_sample_t s;
-            dht_read_latest(&s);
+            bool on = false; uint32_t interval = 0;
+            dht_get_stream_state(&on, &interval);
+            dht_sample_t s; dht_read_latest(&s);
             if (m.ctx) {
                 char buf[96];
                 snprintf(buf, sizeof(buf),
-                         "DHTSTATE stream=%d interval=%u valid=%d age=%u ms\n",
-                         s_dht_stream_on ? 1 : 0,
-                         (unsigned)s_dht_stream_ms,
-                         s.valid ? 1 : 0,
-                         (unsigned)s.age_ms);
+                        "DHTSTATE stream=%d interval=%u valid=%d age=%u ms\n",
+                        on ? 1 : 0, (unsigned)interval, s.valid ? 1 : 0, (unsigned)s.age_ms);
                 cmd_reply(m.ctx, buf);
             }
             break;

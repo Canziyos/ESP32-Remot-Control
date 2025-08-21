@@ -142,7 +142,7 @@ void gatt_build_attr_table(esp_gatt_if_t gatts_if)
          sizeof(uint8_t), sizeof(uint8_t), (uint8_t *)&dht_props}
     };
     db[IDX_DHT_VAL] = (esp_gatts_attr_db_t){
-        {ESP_GATT_AUTO_RSP},
+        {ESP_GATT_RSP_BY_APP},   // let server craft response on each read.
         {ESP_UUID_LEN_128, (uint8_t *)DHT_UUID, ESP_GATT_PERM_READ, 64, 0, NULL}
     };
     db[IDX_DHT_CCC] = (esp_gatts_attr_db_t){

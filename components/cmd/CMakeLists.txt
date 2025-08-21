@@ -12,12 +12,15 @@ idf_component_register(
     cmd_diag.c
     cmd_ota.c
     cmd_dht.c
+    cmd_router.c
   INCLUDE_DIRS
     "include"
   PRIV_REQUIRES
     syscoord         # syscoord_mark_tcp_authed(), syscoord_get_mode(), etc.
     net            # wifi_set_credentials() and Wi-Fi helpers
     ota              # ota_perform / ota_xport API
+    dht             # dht_init(), dht_start(), dht_read()
+    led             # led_init(), led_on(), led_off()
     errsrc           # errsrc_get(), errsrc_get_code()
     bootflag         # bootflag_is_post_rollback()
     nvs_flash        # NVS in cmd_auth
