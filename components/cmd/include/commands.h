@@ -1,38 +1,33 @@
+// commands.h
 #pragma once
-#include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Forward-declare the tagged struct from command.h */
 struct cmd_ctx_t;
+typedef struct cmd_ctx_t cmd_ctx_t;
 
-/* Handler signature */
-typedef void (*cmd_fn_t)(const char *args, struct cmd_ctx_t *ctx);
+typedef void (*cmd_fn_t)(const char *args, cmd_ctx_t *ctx);
 
-/* Table entry */
 typedef struct {
-    const char *name;     /* lowercase keyword */
-    size_t      name_len; /* precomputed strlen(name) */
+    const char *name;
+    unsigned    name_len;   /* precomputed, O(n) scan without strlen. */
     bool        needs_auth;
     cmd_fn_t    fn;
 } cmd_entry_t;
 
-/* Command table */
 extern const cmd_entry_t CMDS[];
-extern const size_t      CMD_COUNT;
+extern const size_t CMD_COUNT;
+/* Optional: helper to find an entry (implemented in cmd_table.c). */
+const cmd_entry_t* cmd_find(const char *cmd, size_t n);
 
-/* Shared reply helpers (implemented in cmd_reply.c) */
-void *cmd_stream_user(struct cmd_ctx_t *ctx);
-void  cmd_reply(struct cmd_ctx_t *ctx, const char *s);
-void  cmd_replyf(struct cmd_ctx_t *ctx, const char *fmt, ...);
-
-/* Handlers can keep calling reply()/replyf() */
-#define reply  cmd_reply
-#define replyf cmd_replyf
+/* Implemented in cmd_reply.c */
+void *cmd_stream_user(cmd_ctx_t *ctx);
+void  cmd_reply(cmd_ctx_t *ctx, const char *s);
+void  cmd_replyf(cmd_ctx_t *ctx, const char *fmt, ...);
 
 #ifdef __cplusplus
 }

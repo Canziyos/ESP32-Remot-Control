@@ -1,22 +1,31 @@
-#include <string.h>
+// components/cmd/cmd_reply.c
+#include "commands.h"
+#include "command.h"
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdint.h>
-#include "command.h"   // concrete cmd_ctx_t
-#include "commands.h"
+#include <limits.h>
 
-void *cmd_stream_user(cmd_ctx_t *ctx) {
-    return ctx->is_ble ? ctx->ble_link : (void*)(intptr_t)ctx->tcp_fd;
+static void *cmd_stream_user(const cmd_ctx_t *ctx) {
+    if (!ctx) return NULL;
+    switch (ctx->xport) {
+        case CMD_XPORT_BLE: return ctx->u.ble_link;
+        case CMD_XPORT_TCP: return (void*)(intptr_t)ctx->u.tcp_fd;
+        default: return NULL;
+    }
 }
 
 void cmd_reply(cmd_ctx_t *ctx, const char *s) {
-    ctx->write(s, (int)strlen(s), cmd_stream_user(ctx));
+    if (!ctx || !ctx->write || !s) return;
+    size_t n = strlen(s);
+    if (n > (size_t)INT_MAX) n = (size_t)INT_MAX;   // keep write() contract (int)
+    ctx->write(s, (int)n, cmd_stream_user(ctx));
 }
 
 void cmd_replyf(cmd_ctx_t *ctx, const char *fmt, ...) {
     char buf[320];
-    va_list ap;
-    va_start(ap, fmt);
+    va_list ap; va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     if (n < 0) return;

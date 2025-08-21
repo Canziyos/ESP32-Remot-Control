@@ -3,6 +3,7 @@
 #include "command_bus.h"
 #include "led.h"
 #include "driver/gpio.h"
+#include "esp_log.h"
 
 
 #define LED_GPIO 22  // GPIO pin connected to the LED.
@@ -33,5 +34,7 @@ static void led_task(void *pv)
  * Must be called once from app_main(), after cmd_bus_init().
  */
 void led_task_start(void) {
+    configASSERT(cmd_bus_is_ready());
+    if (!cmd_bus_is_ready()) return; // or log and return.
     xTaskCreate(led_task, "led", 2048, NULL, 4, NULL);
 }
