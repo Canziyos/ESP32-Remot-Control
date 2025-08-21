@@ -8,7 +8,6 @@
 #include "esp_gap_ble_api.h"
 #include "esp_log.h"
 #include "esp_err.h"
-
 #include <string.h>
 #include <stdbool.h>
 
@@ -174,12 +173,12 @@ void ble_fallback_stop(void) {
     ble_stop_advertising();
     fb_watchdog_stop();
 
-    /* Clear transient state (keep stack enabled unless you need RAM back) */
-    s_connected          = false;
-    s_adv_running        = false;
+    /* Clear transient state (keep stack enabled unlessneed RAM back is needed) */
+    s_connected = false;
+    s_adv_running = false;
     s_adv_start_deferred = false;
 
-    /* If you need to fully free BT/BLE RAM, uncomment below:
+    /* to fully free BT/BLE RAM when needed, uncomment below:
        s_stack_ready = false; s_adv_ready = false;
        if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED)      esp_bluedroid_disable();
        if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED) esp_bluedroid_deinit();

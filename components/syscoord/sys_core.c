@@ -2,6 +2,7 @@
 #include "sys_priv.h"
 #include "syscoord_sink.h"
 
+
 const char *SYSCOORD_TAG = "SYSCOORD";
 
 /* ---- state ---- */
@@ -17,7 +18,7 @@ static void on_alert_from_core(const alert_record_t *rec) {
     if (!rec) return;
     syscoord_alert_sink(rec);
     // Fan-out sink #1: BLE ALERT characteristic.
-    gatt_alert_notify(rec);
+    //gatt_alert_notify(rec);
     // Future: TCP broadcast can be added here.
 }
 

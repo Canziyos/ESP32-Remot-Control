@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+static const char *TAG = "OTA-SESSION";
 
 /* Tunables. */
 #ifndef OTA_SESSION_YIELD_BYTES
@@ -38,7 +39,6 @@
   static inline uint32_t crc32_final(uint32_t crc){ return crc; }
 #endif
 
-static const char *TAG = "OTA-SESSION";
 
 void ota_session_crc_init(void) { /* no-op today. */ }
 

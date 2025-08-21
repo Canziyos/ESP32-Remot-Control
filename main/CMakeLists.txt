@@ -3,7 +3,7 @@ idf_component_register(
   INCLUDE_DIRS "."
   REQUIRES
     syscoord        # components/syscoord.
-    wifi            # components/net/wifi.
+    net            # components/net/wifi.
     cmd             # components/cmd.
     led             # components/led.
     bootflag        # components/bootflag.

@@ -2,19 +2,19 @@
 #pragma once
 #include <stddef.h>
 #include <stdbool.h>
+#include "command.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct cmd_ctx_t;
-typedef struct cmd_ctx_t cmd_ctx_t;
+
 
 typedef void (*cmd_fn_t)(const char *args, cmd_ctx_t *ctx);
 
 typedef struct {
     const char *name;
-    unsigned    name_len;   /* precomputed, O(n) scan without strlen. */
+    size_t    name_len;   /* precomputed, O(n) scan without strlen. */
     bool        needs_auth;
     cmd_fn_t    fn;
 } cmd_entry_t;

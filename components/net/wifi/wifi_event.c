@@ -16,14 +16,14 @@
 /* local helper */
 static const char *wifi_event_name(int32_t id) {
     switch (id) {
-        case WIFI_EVENT_WIFI_READY:          return "WIFI_READY";
-        case WIFI_EVENT_SCAN_DONE:           return "SCAN_DONE";
-        case WIFI_EVENT_STA_START:           return "STA_START";
-        case WIFI_EVENT_STA_STOP:            return "STA_STOP";
-        case WIFI_EVENT_STA_CONNECTED:       return "STA_CONNECTED";
-        case WIFI_EVENT_STA_DISCONNECTED:    return "STA_DISCONNECTED";
+        case WIFI_EVENT_WIFI_READY: return "WIFI_READY";
+        case WIFI_EVENT_SCAN_DONE: return "SCAN_DONE";
+        case WIFI_EVENT_STA_START: return "STA_START";
+        case WIFI_EVENT_STA_STOP: return "STA_STOP";
+        case WIFI_EVENT_STA_CONNECTED: return "STA_CONNECTED";
+        case WIFI_EVENT_STA_DISCONNECTED: return "STA_DISCONNECTED";
         case WIFI_EVENT_STA_AUTHMODE_CHANGE: return "AUTHMODE_CHANGE";
-        default:                             return "OTHER";
+        default: return "OTHER";
     }
 }
 
@@ -102,13 +102,13 @@ void wifi_evt(void *arg, esp_event_base_t base, int32_t id, void *data) {
 
         errsrc_t err = ES_DISCONNECTED;
         switch (d->reason) {
-            case WIFI_REASON_AUTH_EXPIRE:       err = ES_AUTH_EXPIRE;  break;
-            case WIFI_REASON_AUTH_FAIL:         err = ES_AUTH_FAIL;    break;
-            case WIFI_REASON_NO_AP_FOUND:       err = ES_NO_AP;        break;
+            case WIFI_REASON_AUTH_EXPIRE: err = ES_AUTH_EXPIRE;  break;
+            case WIFI_REASON_AUTH_FAIL: err = ES_AUTH_FAIL; break;
+            case WIFI_REASON_NO_AP_FOUND: err = ES_NO_AP; break;
             case WIFI_REASON_HANDSHAKE_TIMEOUT: err = ES_4WAY_TIMEOUT; break;
-            case WIFI_REASON_ASSOC_EXPIRE:      err = ES_ASSOC_EXPIRE; break;
-            case WIFI_REASON_BEACON_TIMEOUT:    err = ES_BEACON_TO;    break;
-            default:                            err = ES_DISCONNECTED; break;
+            case WIFI_REASON_ASSOC_EXPIRE: err = ES_ASSOC_EXPIRE; break;
+            case WIFI_REASON_BEACON_TIMEOUT: err = ES_BEACON_TO; break;
+            default: err = ES_DISCONNECTED; break;
         }
         errsrc_set_enum(err);
         monitor_on_wifi_error(err);

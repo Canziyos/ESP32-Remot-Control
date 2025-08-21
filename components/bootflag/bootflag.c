@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "bootflag.h"
 #include "nvs.h"
+///#include "nvs_flash"
 
 #define BF_NS  "syscoord"
 #define BF_KEY "post_rb"

@@ -3,7 +3,6 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_gap_ble_api.h"
-
 #include "fb_priv.h"
 
 static const char *TAG = "BLE.fb.gap";

@@ -11,7 +11,7 @@ static const char *TAG = "BLE.fb.worker";
 #define BLE_QUEUE_DEPTH 8
 
 QueueHandle_t s_ble_q = NULL;
-TaskHandle_t  s_ble_wkr = NULL;
+TaskHandle_t s_ble_wkr = NULL;
 
 static void ble_worker(void *arg) {
     (void)arg;

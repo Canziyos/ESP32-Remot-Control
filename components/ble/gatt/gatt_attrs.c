@@ -23,7 +23,6 @@ static uint16_t primary_service_uuid = ESP_GATT_UUID_PRI_SERVICE;
 static uint16_t character_declaration_uuid = ESP_GATT_UUID_CHAR_DECLARE;
 static uint16_t character_client_config_uuid = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
 
-#include "gatt_priv.h"  // for the prototype, if you’ve declared it there
 
 uint16_t gatt_ccc_decode(const uint8_t *val, uint16_t len)
 {

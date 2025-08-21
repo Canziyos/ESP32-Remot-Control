@@ -1,5 +1,5 @@
 // main/main.c
-#include "sdkconfig.h"      // CONFIG_LOG_DEFAULT_LEVEL.
+#include "sdkconfig.h" 
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"

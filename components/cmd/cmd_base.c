@@ -8,9 +8,9 @@
 static const char* mode_to_str(sc_mode_t m){
     switch(m){
         case SC_MODE_WAIT_CONTROL: return "WAIT_CONTROL";
-        case SC_MODE_NORMAL:       return "NORMAL";
-        case SC_MODE_RECOVERY:     return "RECOVERY";
-        default:                   return "STARTUP";
+        case SC_MODE_NORMAL: return "NORMAL";
+        case SC_MODE_RECOVERY: return "RECOVERY";
+        default: return "STARTUP";
     }
 }
 

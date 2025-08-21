@@ -1,4 +1,6 @@
+// components/net/tcp/tcp_client.c
 #include <string.h>       // memchr
+#include <strings.h>      // strncasecmp
 #include <stdint.h>       // intptr_t
 #include <limits.h>       // INT_MAX
 #include <unistd.h>       // close, shutdown
@@ -17,16 +19,14 @@ static const char *TAG = "TCP.cli";
 /* Write helper for TCP (matches cmd_write_fn: size_t len) */
 static int tcp_write(const void *buf, size_t len, void *user) {
     int fd = (int)(intptr_t)user;
-    if (!buf || fd < 0) return 0;
-    if (len > (size_t)INT_MAX) len = (size_t)INT_MAX;  // clamp for send()
-    return send(fd, buf, (int)len, 0);
+    return send(fd, buf, len, 0);
 }
 
 /* Log without leaking secrets (AUTH token, Wi-Fi pwd). */
 static void log_sanitized_line(const char *line) {
     if (!line) { ESP_LOGI(TAG, "(null)"); return; }
-    if (!strncasecmp(line, "AUTH ", 5))     { ESP_LOGI(TAG, "Received: 'AUTH ****'"); return; }
-    if (!strncasecmp(line, "SETWIFI ", 8))  { ESP_LOGI(TAG, "Received: 'SETWIFI **** ****'"); return; }
+    if (!strncasecmp(line, "AUTH ", 5))    { ESP_LOGI(TAG, "Received: 'AUTH ****'");    return; }
+    if (!strncasecmp(line, "SETWIFI ", 8)) { ESP_LOGI(TAG, "Received: 'SETWIFI **** ****'"); return; }
     ESP_LOGI(TAG, "Received: '%s'", line);
 }
 
@@ -37,10 +37,10 @@ static void client_task(void *arg) {
     tcp_on_client_connected();
 
     cmd_ctx_t ctx = {
-        .authed = false,
-        .xport  = CMD_XPORT_TCP,
+        .authed   = false,
+        .xport    = CMD_XPORT_TCP,
         .u.tcp_fd = fd,
-        .write  = tcp_write,
+        .write    = tcp_write,
     };
 
     char    line[128];

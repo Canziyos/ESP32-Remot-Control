@@ -14,12 +14,12 @@
 #include "app_cfg.h"
 #include "ota_session.h"
 
-static const char *TAG     = "OTA";
+//static const char *TAG = "OTA";
 static const char *TAG_TCP = "OTA-TCP";
 
 /* Tunables. */
-#define RECV_TIMEOUT_S   OTA_RECV_TIMEOUT_S
-#define WRITE_BUF_SZ     OTA_WRITE_BUF_SZ
+#define RECV_TIMEOUT_S  OTA_RECV_TIMEOUT_S
+#define WRITE_BUF_SZ    OTA_WRITE_BUF_SZ
 
 /* --- helpers for TCP path. --- */
 static ssize_t recv_fully(int fd, void *buf, size_t len) {

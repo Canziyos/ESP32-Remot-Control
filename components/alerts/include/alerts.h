@@ -19,10 +19,10 @@ typedef enum {
 } alert_code_t;
 
 typedef struct {
-    uint16_t     seq;     // monotonically increasing sequence
-    alert_code_t code;    // what happened
+    uint16_t seq;     // monotonically increasing sequence.
+    alert_code_t code;    // what happened.
     #define ALERT_DETAIL_MAX 80
-    char         detail[ALERT_DETAIL_MAX]; // short readable note.
+    char detail[ALERT_DETAIL_MAX]; // short readable note.
 } alert_record_t;
 
 typedef void (*alerts_cb_t)(const alert_record_t *rec);

@@ -1,9 +1,9 @@
 #include "errsrc.h"
 #include <string.h>
 
-static char        s_err[ERRSRC_STR_MAX] = "NONE";
-static errsrc_cb_t s_cb  = 0;
-static errsrc_t    s_last = ES_NONE;
+static char s_err[ERRSRC_STR_MAX] = "NONE";
+static errsrc_cb_t s_cb = 0;
+static errsrc_t s_last = ES_NONE;
 
 /* Canonical strings for enums. */
 static const char* s_tab[] = {

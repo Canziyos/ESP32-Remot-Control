@@ -20,20 +20,20 @@ static const char *TAG = "GATT.srv";
 __attribute__((weak)) void ble_set_connected(bool on) { (void)on; }
 
 /* Shared state (defined here, extern'd in gatt_priv.h) */
-esp_gatt_if_t g_gatts_if        = ESP_GATT_IF_NONE;
-uint16_t      g_conn_id         = 0xFFFF;
-uint16_t      g_mtu_payload     = 20;
+esp_gatt_if_t g_gatts_if = ESP_GATT_IF_NONE;
+uint16_t g_conn_id = 0xFFFF;
+uint16_t g_mtu_payload = 20;
 
-bool          tx_notify_enabled    = false;
-bool          es_notify_enabled    = false;
-bool          alert_notify_enabled = false;
+bool tx_notify_enabled = false;
+bool es_notify_enabled = false;
+bool alert_notify_enabled = false;
 
-uint16_t      gatt_handle_table[EFBE_IDX_NB];
-uint8_t       cccd_tx_val[2]    = {0,0};
-uint8_t       cccd_err_val[2]   = {0,0};
-uint8_t       cccd_alert_val[2] = {0,0};
+uint16_t gatt_handle_table[EFBE_IDX_NB];
+uint8_t cccd_tx_val[2] = {0,0};
+uint8_t cccd_err_val[2] = {0,0};
+uint8_t cccd_alert_val[2] = {0,0};
 
-ble_cmd_t    *g_ble_cli = NULL;
+ble_cmd_t *g_ble_cli = NULL;
 
 static void on_read_errsrc(void) {
     const char *err = errsrc_get();
@@ -150,7 +150,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
 }
 
 void gatt_server_init(void)
-{
+{   
     ESP_ERROR_CHECK(esp_ble_gatts_register_callback(gatts_event_handler));
     ESP_ERROR_CHECK(esp_ble_gatts_app_register(0x42));
 

@@ -23,17 +23,17 @@ typedef enum {
 typedef void (*errsrc_cb_t)(const char *str);
 
 /* String API. */
-void        errsrc_set(const char *s);
+void errsrc_set(const char *s);
 const char* errsrc_get(void);
-static inline void errsrc_clear(void) { errsrc_set("NONE"); }  /* convenience. */
+static inline void errsrc_clear(void) { errsrc_set("NONE"); }
 
 /* Subscriber (single subscriber; last one wins). */
 void errsrc_subscribe(errsrc_cb_t cb);
 
 /* Enum helpers. */
 const char* errsrc_to_string(errsrc_t e);
-void        errsrc_set_enum(errsrc_t e);
-errsrc_t    errsrc_get_code(void);
+void errsrc_set_enum(errsrc_t e);
+errsrc_t errsrc_get_code(void);
 
 #ifdef __cplusplus
 } /* extern "C" */

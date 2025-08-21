@@ -61,7 +61,7 @@ void monitor_on_wifi_error(errsrc_t e) {
             // If we land here, rollback failed and we keep running.
         } else {
             ESP_LOGW(TAG, "First failure but cannot rollback (subtype=%d, state=%d). Skipping.",
-                     run ? run->subtype : -1, (int)st);   // <-- removed stray '+'
+                     run ? run->subtype : -1, (int)st);
         }
         return;
     }
@@ -70,7 +70,7 @@ void monitor_on_wifi_error(errsrc_t e) {
     if (s_fail_streak >= 2) {
         ESP_LOGE(TAG, "No control after rollback or non-rollback path. Entering RECOVERY (lifeboat).");
         alert_raise(ALERT_BLE_FATAL, "no control after rollback; enabling lifeboat");
-        s_done = true;                     // latch to avoid repeats
-        if (s_timeout_cb) s_timeout_cb();  // syscoord will bring up BLE via worker
+        s_done = true;                     // latch to avoid repeats.
+        if (s_timeout_cb) s_timeout_cb();  // syscoord will bring up BLE via worker.
     }
 }

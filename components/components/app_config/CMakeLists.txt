@@ -1,5 +1,0 @@
-# components/alerts/CMakeLists.txt
-idf_component_register(
-  SRCS "app_cfg.c"
-  INCLUDE_DIRS "include"
-)

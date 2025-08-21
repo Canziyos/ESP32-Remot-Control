@@ -14,7 +14,7 @@
 #include "ota_bridge.h"    // declares the hooks we override
 #include "ota_handler.h"      // ota_begin_xport / write_xport / finish_xport / abort_xport
 #include "monitor.h"          // health_monitor_control_ok(...)
-#include "syscoord.h"         // optional gating via mode
+#include "syscoord.h"         // gating via mode?
 #include "gatt_server.h"      // gatt_server_send_status(...)
 
 static const char *TAG = "BLE-OTA";
@@ -26,12 +26,12 @@ static inline void ble_tx_send(const char *s) {
 
 /* ---- BLE OTA state ---- */
 typedef struct {
-    bool      active;
-    uint32_t  total;
-    uint32_t  written;
-    uint32_t  expect_crc;
-    uint32_t  expect_seq;
-    uint32_t  next_prog_mark;
+    bool active;
+    uint32_t total;
+    uint32_t written;
+    uint32_t expect_crc;
+    uint32_t expect_seq;
+    uint32_t next_prog_mark;
 } ble_ota_state_t;
 
 static ble_ota_state_t s_bo;
@@ -77,11 +77,11 @@ void ble_ota_on_ctrl_write(const uint8_t *data, uint16_t len)
             return;
         }
 
-        s_bo.active         = true;
-        s_bo.total          = size;
-        s_bo.written        = 0;
-        s_bo.expect_crc     = crc;     // checked inside ota_finish_xport
-        s_bo.expect_seq     = 0;
+        s_bo.active = true;
+        s_bo.total = size;
+        s_bo.written = 0;
+        s_bo.expect_crc = crc;     // checked inside ota_finish_xport.
+        s_bo.expect_seq = 0;
         s_bo.next_prog_mark = 256 * 1024;
 
         // Latch health monitor so the device doesn’t try to rollback mid-flash.
@@ -104,7 +104,7 @@ void ble_ota_on_ctrl_write(const uint8_t *data, uint16_t len)
 
         ble_tx_send("OK REBOOTING");
         ESP_LOGI(TAG, "BLE-OTA complete: %u bytes.", (unsigned)s_bo.written);
-        ble_ota_reset();                       // avoid finalize-on-disconnect race.
+        ble_ota_reset();                       // To avoid finalize-on-disconnect race.
         vTaskDelay(pdMS_TO_TICKS(400));
         esp_restart(); // no return
     }

@@ -12,7 +12,7 @@ extern "C" {
 /* ------------------- Writer (flash/partition) ------------------- */
 
 typedef struct {
-    esp_ota_handle_t       handle;   // Valid after begin until end/abort.
+    esp_ota_handle_t handle;   // Valid after begin until end/abort.
     const esp_partition_t *dst;      // Chosen target partition.
 } ota_writer_t;
 
@@ -20,7 +20,7 @@ typedef struct {
 esp_err_t ota_writer_begin(size_t total_size, ota_writer_t *wr);
 esp_err_t ota_writer_write(ota_writer_t *wr, const void *data, size_t len);
 esp_err_t ota_writer_end(ota_writer_t *wr);
-void      ota_writer_abort(ota_writer_t *wr);
+void ota_writer_abort(ota_writer_t *wr);
 
 /* ------------------- Session (bounds + CRC + yield) -------------- */
 
@@ -30,15 +30,15 @@ void      ota_writer_abort(ota_writer_t *wr);
 #endif
 
 typedef struct {
-    bool         active;
+    bool active;
     ota_writer_t wr;
-    size_t       bytes_expected;
-    size_t       bytes_written;
-    uint32_t     crc_expect;     // 0 = skip final CRC check.
-    uint32_t     crc_running;
-    char         source[8];      // "BLE"/"TCP" for logs.
-    size_t       yield_bytes;
-    size_t       since_yield;
+    size_t bytes_expected;
+    size_t bytes_written;
+    uint32_t crc_expect;     // 0 = skip final CRC check.
+    uint32_t crc_running;
+    char source[8];      // "BLE"/"TCP" for logs.
+    size_t yield_bytes;
+    size_t since_yield;
 } ota_session_t;
 
 // Session lifecycle.

@@ -1,13 +1,11 @@
-// components/cmd/cmd_reply.c
 #include "commands.h"
 #include "command.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdint.h>
-#include <limits.h>
+#include <stdint.h>   // intptr_t
 
-static void *cmd_stream_user(const cmd_ctx_t *ctx) {
+void *cmd_stream_user(cmd_ctx_t *ctx) {
     if (!ctx) return NULL;
     switch (ctx->xport) {
         case CMD_XPORT_BLE: return ctx->u.ble_link;
@@ -19,8 +17,7 @@ static void *cmd_stream_user(const cmd_ctx_t *ctx) {
 void cmd_reply(cmd_ctx_t *ctx, const char *s) {
     if (!ctx || !ctx->write || !s) return;
     size_t n = strlen(s);
-    if (n > (size_t)INT_MAX) n = (size_t)INT_MAX;   // keep write() contract (int)
-    ctx->write(s, (int)n, cmd_stream_user(ctx));
+    (void)ctx->write(s, n, cmd_stream_user(ctx));
 }
 
 void cmd_replyf(cmd_ctx_t *ctx, const char *fmt, ...) {

@@ -2,8 +2,8 @@
 #include "alerts.h"
 
 static alert_record_t s_latest = {0, ALERT_NONE, ""};
-static alerts_cb_t    s_cb     = NULL;
-static uint16_t       s_seq    = 0;
+static alerts_cb_t s_cb = NULL;
+static uint16_t s_seq = 0;
 
 void alert_latest(alert_record_t *out)
 {
@@ -21,7 +21,7 @@ void alerts_subscribe(alerts_cb_t cb)
 void alert_raise(alert_code_t code, const char *detail_opt)
 {
     s_seq++;
-    s_latest.seq  = s_seq;
+    s_latest.seq = s_seq;
     s_latest.code = code;
 
     const char *d = detail_opt ? detail_opt : "";
