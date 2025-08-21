@@ -48,9 +48,9 @@
 #endif
 
 // --- DHT sensor defaults ---
-#ifndef APP_DHT_GPIO
-#define APP_DHT_GPIO        13
+#ifndef DHT_GPIO
+#define DHT_GPIO        13
 #endif
-#ifndef APP_DHT_PERIOD_MS
-#define APP_DHT_PERIOD_MS   2000
+#ifndef DHT_PERIOD_MS
+#define DHT_PERIOD_MS   2000
 #endif

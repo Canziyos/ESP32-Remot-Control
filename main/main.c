@@ -37,7 +37,7 @@ void app_main(void) {
     cmd_bus_init();
     cmd_router_start();
     // DHT sampler.
-    dht_cfg_t dcfg = {.gpio = APP_DHT_GPIO, .period_ms = APP_DHT_PERIOD_MS};
+    dht_cfg_t dcfg = {.gpio = DHT_GPIO, .period_ms = DHT_PERIOD_MS};
     ESP_ERROR_CHECK(dht_init(&dcfg));
     ESP_ERROR_CHECK(dht_start()); 
 

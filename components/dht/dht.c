@@ -20,7 +20,18 @@
 
 static const char *TAG = "DHT";
 
-/* ---------- Internal state ---------- */
+/* -------- Tunables (safe for DHT11 breakout) -------- */
+#define DHT_RETRIES 3
+#define DHT_INITIAL_LOW_TIMEOUT_US 2000   /* wait sensor pulls LOW after release */
+#define DHT_INITIAL_HIGH_TIMEOUT_US  400   /* then returns HIGH */
+#define DHT_BIT_LOW_WAIT_US 200   /* wait for start-of-bit LOW */
+#define DHT_BIT_RISE_WAIT_US 200   /* wait for HIGH after that */
+#define DHT_BIT_HIGH_END_US 320   /* HIGH must end within this */
+#define DHT_ONE_THRESHOLD_US 50   /* > ~50us => bit '1' */
+#define DHT_MIN_PERIOD_MS 2000  /* DHT11 needs ~2s between reads */
+#define DHT_USE_INTERNAL_PULLUP 0  /* breakout has its own pull-up */
+
+/* -------- Driver state -------- */
 typedef struct {
     bool inited;
     int gpio;
@@ -36,77 +47,98 @@ typedef struct {
 } dht_state_t;
 
 static dht_state_t S = {0};
-/* Protects concurrent access to S.last / S.last_tick. */
+/* Protects last sample snapshot */
 static portMUX_TYPE s_dht_mux = portMUX_INITIALIZER_UNLOCKED;
+/* Protects the tight 40-bit transaction timing */
+static portMUX_TYPE s_dht_bus_mux = portMUX_INITIALIZER_UNLOCKED;
 
-/* ---------- Low-level timing helpers ---------- */
-static bool wait_for_level(int gpio, int level, uint32_t timeout_us) {
-    int64_t start = esp_timer_get_time();
+static inline int64_t now_us(void) { return esp_timer_get_time(); }
+
+/* Hot polling loop; kept simple for speed. */
+static bool IRAM_ATTR wait_for_level(int gpio, int level, uint32_t timeout_us) {
+    int64_t start = now_us();
     while (gpio_get_level(gpio) != level) {
-        if ((uint32_t)(esp_timer_get_time() - start) > timeout_us) return false;
+        if ((uint32_t)(now_us() - start) > timeout_us) return false;
     }
     return true;
 }
 
+/* One raw dht transaction -=> 5 bytes (40 bits). */
 static bool dht_read_raw_bytes(int gpio, uint8_t out[5]) {
     memset(out, 0, 5);
 
-    // --- DRIVE START PULSE ---
+    /* Host start pulse: ~18ms LOW, then release. */
     gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
     gpio_set_level(gpio, 1);
     dht_delay_us(10);
     gpio_set_level(gpio, 0);
-    dht_delay_us(18000); // ~18 ms
+    dht_delay_us(18000);
+    gpio_set_level(gpio, 1);       /* release to pull-up */
 
-    // Release line and switch to input to let sensor drive it
-    gpio_set_level(gpio, 1);                     // bring it high
+    /* Sensor drives the line. */
     gpio_set_direction(gpio, GPIO_MODE_INPUT);
+#if DHT_USE_INTERNAL_PULLUP
+    gpio_pullup_en(gpio);
+#else
+    gpio_pullup_dis(gpio);
+#endif
+    gpio_pulldown_dis(gpio);
 
-    // Reply: ~80us low, then ~80us high
-    if (!wait_for_level(gpio, 0, 1000)) return false;
-    if (!wait_for_level(gpio, 1,  200)) return false;
+    /* Critical window: response + 40 bits */
+    portENTER_CRITICAL(&s_dht_bus_mux);
 
-    // 40 bits...
+    /* Sensor response: ~80us LOW, then ~80us HIGH */
+    if (!wait_for_level(gpio, 0, DHT_INITIAL_LOW_TIMEOUT_US))  { portEXIT_CRITICAL(&s_dht_bus_mux); return false; }
+    if (!wait_for_level(gpio, 1, DHT_INITIAL_HIGH_TIMEOUT_US)) { portEXIT_CRITICAL(&s_dht_bus_mux); return false; }
+
+    /* 40 data bits */
     for (int bit = 0; bit < 40; ++bit) {
-        if (!wait_for_level(gpio, 0, 100)) return false;
-        if (!wait_for_level(gpio, 1, 100)) return false;
-        int64_t t0 = esp_timer_get_time();
-        if (!wait_for_level(gpio, 0, 200)) return false;
-        int high_us = (int)(esp_timer_get_time() - t0);
+        if (!wait_for_level(gpio, 0, DHT_BIT_LOW_WAIT_US))  { portEXIT_CRITICAL(&s_dht_bus_mux); return false; }
+        if (!wait_for_level(gpio, 1, DHT_BIT_RISE_WAIT_US)) { portEXIT_CRITICAL(&s_dht_bus_mux); return false; }
+        int64_t t0 = now_us();
+        if (!wait_for_level(gpio, 0, DHT_BIT_HIGH_END_US))  { portEXIT_CRITICAL(&s_dht_bus_mux); return false; }
+        int high_us = (int)(now_us() - t0);
 
         int byte = bit / 8;
         out[byte] <<= 1;
-        if (high_us > 50) out[byte] |= 1; // ~70us => 1, ~26us => 0
+        if (high_us > DHT_ONE_THRESHOLD_US) out[byte] |= 1;
     }
 
+    portEXIT_CRITICAL(&s_dht_bus_mux);
+
+    /* Verify checksum. */
     uint8_t sum = (uint8_t)(out[0] + out[1] + out[2] + out[3]);
     return (sum == out[4]);
 }
 
-
-/* Read one sample and convert to °C / %RH. Supports DHT11 & DHT22. */
+/* Decode to °C / %RH. Retries => jitter?. */
 static bool dht_hw_read(float *out_t_c, float *out_rh) {
     if (!out_t_c || !out_rh) return false;
-    int gpio = S.gpio;
 
-    gpio_pullup_dis(gpio);    // module has its own pull-up
-    gpio_pulldown_dis(gpio);
+    /* No internal pulldown; the breakout’s pull-up holds the line. */
+    gpio_pulldown_dis(S.gpio);
 
     uint8_t raw[5];
-    if (!dht_read_raw_bytes(gpio, raw)) return false;
-
-    // Heuristic: DHT11 often has raw[1]==0 && raw[3]==0 (integer only)
-    if (raw[1] == 0 && raw[3] == 0) {
-        *out_rh  = (float)raw[0];
-        *out_t_c = (float)raw[2];
-    } else {
-        uint16_t rh10 = ((uint16_t)raw[0] << 8) | raw[1];
-        int16_t  t10  = ((int16_t)raw[2] << 8) | raw[3];
-        if (t10 & 0x8000) t10 = -(t10 & 0x7FFF);
-        *out_rh  = (float)rh10 / 10.0f;
-        *out_t_c = (float)t10  / 10.0f;
+    for (int attempt = 0; attempt < DHT_RETRIES; ++attempt) {
+        if (dht_read_raw_bytes(S.gpio, raw)) {
+            /* DHT11 usually reports integer bytes (raw[1] & raw[3] == 0). */
+            if (raw[1] == 0 && raw[3] == 0) {
+                *out_rh  = (float)raw[0];
+                *out_t_c = (float)raw[2];
+            } else {
+                /* DHT22 / AM2302 */
+                uint16_t rh10 = ((uint16_t)raw[0] << 8) | raw[1];
+                int16_t  t10  = ((int16_t) raw[2] << 8) | raw[3];
+                if (t10 & 0x8000) t10 = -(t10 & 0x7FFF);
+                *out_rh  = (float)rh10 / 10.0f;
+                *out_t_c = (float)t10  / 10.0f;
+            }
+            return true;
+        }
+        /* Small settle before a retry. */
+        dht_delay_us(1200);
     }
-    return true;
+    return false;
 }
 
 /* ---------- Sampler task ---------- */
@@ -125,13 +157,13 @@ static void dht_sampler_task(void *pv) {
         portENTER_CRITICAL(&s_dht_mux);
         S.last.valid  = ok;
         S.last.temp_c = ok ? t : 0.0f;
-        S.last.rh     = ok ? h : 0.0f;
+        S.last.rh = ok ? h : 0.0f;
         S.last.age_ms = 0;
-        S.last_tick   = now;
+        S.last_tick = now;
         portEXIT_CRITICAL(&s_dht_mux);
 
         uint32_t ms = S.period_ms ? S.period_ms : S.def_period_ms;
-        if (ms < 200) ms = 200; // be gentle
+        if (ms < DHT_MIN_PERIOD_MS) ms = DHT_MIN_PERIOD_MS;
         ulTaskNotifyTake(pdTRUE, ms / portTICK_PERIOD_MS);
     }
 }
@@ -140,13 +172,22 @@ static void dht_sampler_task(void *pv) {
 esp_err_t dht_init(const dht_cfg_t *cfg) {
     if (!cfg) return ESP_ERR_INVALID_ARG;
 
-    S.gpio          = cfg->gpio;
-    S.def_period_ms = cfg->period_ms ? cfg->period_ms : 2000;
-    S.period_ms     = S.def_period_ms;
-    S.stream_on     = false;
+    S.gpio = cfg->gpio;
+    S.def_period_ms = cfg->period_ms ? cfg->period_ms : DHT_MIN_PERIOD_MS;
+    S.period_ms = S.def_period_ms;
+    S.stream_on = false;
+
+    /* Idle HIGH (matches your standalone test) */
+    gpio_reset_pin(S.gpio);
+    gpio_set_direction(S.gpio, GPIO_MODE_OUTPUT);
+    gpio_set_level(S.gpio, 1);
+#if DHT_USE_INTERNAL_PULLUP
+    gpio_pullup_dis(S.gpio);    /* enable only when in INPUT mode */
+#endif
+    gpio_pulldown_dis(S.gpio);
 
     portENTER_CRITICAL(&s_dht_mux);
-    S.last = (dht_sample_t){ .valid=false, .temp_c=0, .rh=0, .age_ms=0 };
+    S.last = (dht_sample_t){ .valid=false, .temp_c=0.0f, .rh=0.0f, .age_ms=0 };
     S.last_tick = xTaskGetTickCount();
     portEXIT_CRITICAL(&s_dht_mux);
 
@@ -163,17 +204,19 @@ esp_err_t dht_start(void) {
 }
 
 void dht_get_stream_state(bool *on, uint32_t *every_ms) {
-    if (on)       *on = S.stream_on;
+    if (on) *on = S.stream_on;
     if (every_ms) *every_ms = S.period_ms;
 }
 
 void dht_read_latest(dht_sample_t *out) {
     if (!out) return;
+
     TickType_t last_tick;
     portENTER_CRITICAL(&s_dht_mux);
-    *out = S.last;
+    *out = S.last;                 /* Snapshot copy */
     last_tick = S.last_tick;
     portEXIT_CRITICAL(&s_dht_mux);
+
     TickType_t now = xTaskGetTickCount();
     out->age_ms = (uint32_t)((now - last_tick) * portTICK_PERIOD_MS);
 }
@@ -182,6 +225,6 @@ void dht_set_stream(bool on, uint32_t every_ms) {
     S.stream_on = on;
     if (every_ms) S.period_ms = every_ms;
     if (S.task) xTaskNotifyGive(S.task);
-    ESP_LOGI(TAG, "stream=%d interval=%u ms", on ? 1 : 0,
-             (unsigned)(every_ms ? every_ms : S.period_ms));
+    ESP_LOGI(TAG, "stream=%d interval=%u ms",
+             on ? 1 : 0, (unsigned)(every_ms ? every_ms : S.period_ms));
 }
