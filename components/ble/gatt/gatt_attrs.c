@@ -9,19 +9,19 @@
 
 static const char *TAG = "GATT.attrs";
 
-/* Properties (constant) */
-static const uint8_t rx_props       = ESP_GATT_CHAR_PROP_BIT_WRITE_NR | ESP_GATT_CHAR_PROP_BIT_WRITE;
-static const uint8_t tx_props       = ESP_GATT_CHAR_PROP_BIT_NOTIFY  | ESP_GATT_CHAR_PROP_BIT_READ;
-static const uint8_t wifi_props     = ESP_GATT_CHAR_PROP_BIT_WRITE;
-static const uint8_t errsrc_props   = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-static const uint8_t alert_props    = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+/* Properties */
+static const uint8_t rx_props = ESP_GATT_CHAR_PROP_BIT_WRITE_NR | ESP_GATT_CHAR_PROP_BIT_WRITE;
+static const uint8_t tx_props = ESP_GATT_CHAR_PROP_BIT_NOTIFY  | ESP_GATT_CHAR_PROP_BIT_READ;
+static const uint8_t wifi_props = ESP_GATT_CHAR_PROP_BIT_WRITE;
+static const uint8_t errsrc_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static const uint8_t alert_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
 static const uint8_t ota_ctrl_props = ESP_GATT_CHAR_PROP_BIT_WRITE;      // write with response
 static const uint8_t ota_data_props = ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
-static const uint8_t dht_props   = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
+static const uint8_t dht_props = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
 
 /* 16-bit helper UUIDs */
-static uint16_t primary_service_uuid         = ESP_GATT_UUID_PRI_SERVICE;
-static uint16_t character_declaration_uuid   = ESP_GATT_UUID_CHAR_DECLARE;
+static uint16_t primary_service_uuid = ESP_GATT_UUID_PRI_SERVICE;
+static uint16_t character_declaration_uuid = ESP_GATT_UUID_CHAR_DECLARE;
 static uint16_t character_client_config_uuid = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
 
 uint16_t gatt_ccc_decode(const uint8_t *val, uint16_t len)
@@ -169,7 +169,7 @@ void gatt_on_attr_table_created(esp_ble_gatts_cb_param_t *param)
         const char *init  = "OK";
         const char *einit = "NONE";
         const char *ainit = "ALERT seq=0 code=0";
-        const char *sinit = "DHT NA";  // NEW
+        const char *sinit = "DHT NA";
 
         esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_TX_VAL],
                                      (uint16_t)strlen(init),  (const uint8_t*)init);

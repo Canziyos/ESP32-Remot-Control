@@ -21,7 +21,7 @@ typedef struct {
 
 extern const cmd_entry_t CMDS[];
 extern const size_t CMD_COUNT;
-/* Optional: helper to find an entry (implemented in cmd_table.c). */
+/* helper to find an entry (implemented in cmd_table.c). */
 const cmd_entry_t* cmd_find(const char *cmd, size_t n);
 
 /* Implemented in cmd_reply.c */

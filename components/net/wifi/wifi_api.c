@@ -146,5 +146,4 @@ void wifi_start(const char *ssid, const char *pwd) {
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "Wi-Fi driver started - waiting for IP …");
 }
-
 /* handlers are declared in wifi_priv.h and defined in wifi_event.c */

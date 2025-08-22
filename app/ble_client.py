@@ -312,7 +312,7 @@ async def ble_session() -> bool:
                     print("usage: SETWIFI <ssid> <pwd>")
                 continue
 
-            # Manual one-shot DHT read (works even if you didn't enable DHT notify)
+            # Manual one-shot DHT read (works even if we didn't enable DHT notify)
             if low in ("dht", "dht?", "/dht"):
                 if dht_uuid:
                     try:

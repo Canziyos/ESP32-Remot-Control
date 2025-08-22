@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "gatt_priv.h"
-#include "sys_sink.h"   // brings in alerts.h so alert_record_t is known
+#include "sys_sink.h" 
 
 static char s_last_errsrc_sent[64] = "";
 
@@ -11,7 +11,7 @@ static char s_last_errsrc_sent[64] = "";
 static void errsrc_notify_if_changed(const char *current_err) {
     if (!current_err) current_err = "NONE";
 
-    size_t used = strnlen(current_err, sizeof(s_last_errsrc_sent) - 1); // <=63
+    size_t used = strnlen(current_err, sizeof(s_last_errsrc_sent) - 1); // 63
 
     if (g_gatts_if != ESP_GATT_IF_NONE && gatt_handle_table[IDX_ERRSRC_VAL]) {
         esp_ble_gatts_set_attr_value(gatt_handle_table[IDX_ERRSRC_VAL],

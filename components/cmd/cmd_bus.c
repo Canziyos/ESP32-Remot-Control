@@ -14,7 +14,7 @@ bool cmd_bus_is_ready(void) {
     return s_q != NULL;
 }
 
-/* Rich message APIs (preferred) */
+/* Rich message APIs. */
 BaseType_t cmd_bus_send_msg(const cmd_msg_t *msg, TickType_t ticks) {
     if (!s_q || !msg) return pdFALSE;
     return xQueueSend(s_q, msg, ticks);

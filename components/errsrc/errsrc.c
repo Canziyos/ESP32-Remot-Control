@@ -7,15 +7,15 @@ static errsrc_t s_last = ES_NONE;
 
 /* Canonical strings for enums. */
 static const char* s_tab[] = {
-    [ES_NONE]         = "NONE",
-    [ES_NO_CREDS]     = "NO_CREDS",
-    [ES_IP_LOST]      = "IP_LOST",
-    [ES_AUTH_EXPIRE]  = "AUTH_EXPIRE",
-    [ES_AUTH_FAIL]    = "AUTH_FAIL",
-    [ES_NO_AP]        = "NO_AP",
+    [ES_NONE] = "NONE",
+    [ES_NO_CREDS] = "NO_CREDS",
+    [ES_IP_LOST] = "IP_LOST",
+    [ES_AUTH_EXPIRE] = "AUTH_EXPIRE",
+    [ES_AUTH_FAIL] = "AUTH_FAIL",
+    [ES_NO_AP] = "NO_AP",
     [ES_4WAY_TIMEOUT] = "4WAY_TIMEOUT",
     [ES_ASSOC_EXPIRE] = "ASSOC_EXPIRE",
-    [ES_BEACON_TO]    = "BEACON_TO",
+    [ES_BEACON_TO] = "BEACON_TO",
     [ES_DISCONNECTED] = "DISCONNECTED",
 };
 
@@ -47,7 +47,7 @@ void errsrc_set(const char *s) {
     strncpy(s_err, s, ERRSRC_STR_MAX - 1);
     s_err[ERRSRC_STR_MAX - 1] = '\0';
 
-    /* Keep enum in sync even for string callers. */
+    /* enum in sync even for string callers. */
     s_last = str_to_enum(s);
 
     if (s_cb) s_cb(s_err);

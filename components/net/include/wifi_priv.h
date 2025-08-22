@@ -3,7 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "esp_timer.h"
-#include "esp_event.h"   // <-- needed for esp_event_base_t
+#include "esp_event.h" 
 #include <stdint.h>
 #include <stdbool.h>
 

@@ -162,6 +162,6 @@ def tcp_session():
         except Exception:
             pass
         try:
-            s.close()  # type: ignore
+            s.close()
         except Exception:
             pass

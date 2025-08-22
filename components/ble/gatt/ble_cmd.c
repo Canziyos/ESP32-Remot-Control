@@ -56,10 +56,8 @@ void ble_cmd_destroy(ble_cmd_t* cli) {
     if (cli) free(cli);
 }
 
-void ble_cmd_on_connect(ble_cmd_t* cli,
-                        esp_gatt_if_t gatts_if,
-                        uint16_t conn_id,
-                        uint16_t tx_char_handle)
+void ble_cmd_on_connect(ble_cmd_t* cli, esp_gatt_if_t gatts_if,
+                        uint16_t conn_id, uint16_t tx_char_handle)
 {
     if (!cli) return;
     memset(cli, 0, sizeof(*cli));

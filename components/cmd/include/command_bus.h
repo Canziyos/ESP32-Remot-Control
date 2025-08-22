@@ -27,8 +27,8 @@ typedef struct {
     uint32_t   u32;   // optional numeric arg
 } cmd_msg_t;
 
-void       cmd_bus_init(void);
-bool       cmd_bus_is_ready(void);
+void cmd_bus_init(void);
+bool cmd_bus_is_ready(void);
 
 BaseType_t cmd_bus_send(cmd_t cmd, TickType_t ticks);
 BaseType_t cmd_bus_receive(cmd_t *out, TickType_t ticks);

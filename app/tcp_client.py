@@ -120,14 +120,14 @@ def ota_tcp(sock: socket.socket, file_path) -> Optional[socket.socket]:
     kbps = (size / 1024) / duration if duration > 0 else 0
     print(f"[OTA] Upload complete - {duration:.2f}s at {kbps:.1f} KB/s. Device rebooting...")
 
-    # Try to establish a NEW session (this is what we return)
+    # Try to establish a new session (this is what we return)
     deadline = time.time() + max(C.WAIT_AFTER_REBOOT_S, 12)
     first_ble_check_at = time.time() + C.POST_OTA_TCP_ONLY_WINDOW_S
     s_new: Optional[socket.socket] = None
     print("[OTA] Waiting for device to come back...")
 
     # Let the orchestrator (session.py) decide if/when to jump to BLE.
-    # Here we only do the quick TCP probes; the caller will handle BLE as needed.
+    # Here: quick TCP probes. the caller will handle BLE as needed.
     while time.time() < deadline:
         s_try = connect_and_auth(print_banner=False,
                                  connect_timeout=C.TCP_POST_OTA_CONNECT_TIMEOUT,
