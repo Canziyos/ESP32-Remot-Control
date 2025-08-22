@@ -31,7 +31,7 @@ void set_mode(sc_mode_t m) {
 
   switch (m) {
     case SC_MODE_STARTUP:
-      /* nothing */
+      /* nothing so far*/
       break;
 
     case SC_MODE_WAIT_CONTROL:

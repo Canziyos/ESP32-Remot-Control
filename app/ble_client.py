@@ -1,7 +1,7 @@
 import asyncio, struct, zlib, time
 from typing import Optional, Tuple
 from . import config as C
-from utils import stop_notify_quiet, is_wifi_ok, resolve_by_prefix, resolve_by_suffix
+from utils import stop_notify_quiet, is_wifi_ok, resolve_by_prefix
 
 # BLE import (keep same behavior)
 try:
@@ -179,14 +179,12 @@ async def ble_session() -> bool:
             return False
 
         # Include DHT prefix at the end; if device doesn't expose it, dht_uuid will be None.
-        (rx_uuid, tx_uuid, wifi_uuid, err_uuid, alert_uuid, ota_ctrl_uuid, ota_data_uuid) = resolve_by_prefix(
-            svcs,
-            [C.RX_PREFIX, C.TX_PREFIX, C.WIFI_PREFIX, C.ERR_PREFIX, C.ALERT_PREFIX, C.OTA_CTRL_PREFIX, C.OTA_DATA_PREFIX]
-        )
-        # Try to resolve DHT by prefix; fall back to suffix if needed.
-        dht_uuid = resolve_by_prefix(svcs, [C.DHT_PREFIX])[0]
-        if not dht_uuid and getattr(C, "DHT_SUFFIX", None):
-            dht_uuid = resolve_by_suffix(svcs, C.DHT_SUFFIX)
+        rx_uuid, tx_uuid, wifi_uuid, err_uuid, alert_uuid, ota_ctrl_uuid, ota_data_uuid, dht_uuid = \
+            resolve_by_prefix(
+                svcs,
+                [C.RX_PREFIX, C.TX_PREFIX, C.WIFI_PREFIX, C.ERR_PREFIX, C.ALERT_PREFIX,
+                 C.OTA_CTRL_PREFIX, C.OTA_DATA_PREFIX, C.DHT_PREFIX]
+            )
 
         if not (rx_uuid and tx_uuid and wifi_uuid and err_uuid):
             print("[BLE] Could not resolve expected characteristics by prefix.")
@@ -199,6 +197,7 @@ async def ble_session() -> bool:
                     props = ",".join(sorted(getattr(c, "properties", []) or []))
                     print(f"       char: {c.uuid}  props=[{props}]")
 
+        # Enable notifications (TX/ERR/ALERT always; DHT if present)
         notify_ok = False
         try:
             await client.start_notify(tx_uuid, _notify)
@@ -213,23 +212,22 @@ async def ble_session() -> bool:
                     await client.start_notify(alert_uuid, _notify)
             except Exception:
                 pass
+            # Optional DHT stream
+            try:
+                if dht_uuid:
+                    async def _notify_dht(sender, data: bytearray):
+                        try:
+                            msg = data.decode(errors="ignore").strip()
+                        except Exception:
+                            msg = repr(data)
+                        if msg:
+                            print(f"[BLE][DHT] {msg}")
+                    await client.start_notify(dht_uuid, _notify_dht)
+            except Exception:
+                pass
             print("[BLE] Notify on TX (and ERRSRC/ALERT if present).")
         except Exception:
             print("[BLE] Notify start failed; continuing without notify.")
-        
-        # --- DHT: read once (and optionally subscribe) ---
-        if dht_uuid:
-            try:
-                val = await client.read_gatt_char(dht_uuid)
-                txt = (val.decode(errors="ignore") or "").strip()
-                print(f"[BLE] DHT initial: {txt or repr(val)}")
-                # live updates (no-op until firmware starts notifying)
-                try:
-                    await client.start_notify(dht_uuid, _notify)
-                except Exception:
-                    pass
-            except Exception as e:
-                print(f"[BLE] DHT read failed: {e}")
 
         # AUTH
         try:
@@ -353,6 +351,5 @@ async def ble_session() -> bool:
 
         if notify_ok:
             await stop_notify_quiet(client, tx_uuid, err_uuid, alert_uuid, dht_uuid)
-        
 
     return False

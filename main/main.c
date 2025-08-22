@@ -35,7 +35,7 @@ void app_main(void) {
     syscoord_init();  // System coordination.
     // Command routing.
     cmd_bus_init();
-    cmd_router_start();
+   
     // DHT sampler.
     dht_cfg_t dcfg = {.gpio = DHT_GPIO, .period_ms = DHT_PERIOD_MS};
     ESP_ERROR_CHECK(dht_init(&dcfg));
@@ -43,6 +43,7 @@ void app_main(void) {
 
     // LED driver init (no task needed for simple on/off).
     ESP_ERROR_CHECK(led_init());
+    cmd_router_start();
 
     // Use saved credentials from NVS.
     // wifi_start("ssid", "password");

@@ -112,34 +112,30 @@ static bool dht_read_raw_bytes(int gpio, uint8_t out[5]) {
 }
 
 /* Decode to °C / %RH. Retries => jitter?. */
+/* ---------- in dht.c ---------- */
 static bool dht_hw_read(float *out_t_c, float *out_rh) {
     if (!out_t_c || !out_rh) return false;
 
-    /* No internal pulldown; the breakout’s pull-up holds the line. */
     gpio_pulldown_dis(S.gpio);
 
     uint8_t raw[5];
     for (int attempt = 0; attempt < DHT_RETRIES; ++attempt) {
         if (dht_read_raw_bytes(S.gpio, raw)) {
-            /* DHT11 usually reports integer bytes (raw[1] & raw[3] == 0). */
-            if (raw[1] == 0 && raw[3] == 0) {
-                *out_rh  = (float)raw[0];
-                *out_t_c = (float)raw[2];
-            } else {
-                /* DHT22 / AM2302 */
-                uint16_t rh10 = ((uint16_t)raw[0] << 8) | raw[1];
-                int16_t  t10  = ((int16_t) raw[2] << 8) | raw[3];
-                if (t10 & 0x8000) t10 = -(t10 & 0x7FFF);
-                *out_rh  = (float)rh10 / 10.0f;
-                *out_t_c = (float)t10  / 10.0f;
-            }
+            // DHT11 datasheet: raw[0] = RH int, raw[2] = Temp int
+            *out_rh  = (float)raw[0];
+            *out_t_c = (float)raw[2];
+
+            // Clamp to DHT11 ranges (extra safety)
+            if (*out_rh < 20.0f || *out_rh > 90.0f) *out_rh = 0.0f;
+            if (*out_t_c < 0.0f  || *out_t_c > 50.0f) *out_t_c = 0.0f;
+
             return true;
         }
-        /* Small settle before a retry. */
         dht_delay_us(1200);
     }
     return false;
 }
+
 
 /* ---------- Sampler task ---------- */
 static void dht_sampler_task(void *pv) {

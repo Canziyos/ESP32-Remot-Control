@@ -113,14 +113,26 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
     case ESP_GATTS_READ_EVT:
         if (param->read.handle == gatt_handle_table[IDX_ERRSRC_VAL]) {
             on_read_errsrc();
+
         } else if (param->read.handle == gatt_handle_table[IDX_ALERT_VAL]) {
             on_read_alert();
+
         } else if (param->read.handle == gatt_handle_table[IDX_DHT_VAL]) {
-            /* refresh dht value on explicit read */
             uint8_t tmp[64];
-            (void)on_read_dht_and_len(NULL, tmp, sizeof(tmp));
+            const uint8_t *p = NULL;
+            uint16_t n = on_read_dht_and_len(&p, tmp, sizeof(tmp));
+
+            esp_gatt_rsp_t rsp;
+            memset(&rsp, 0, sizeof(rsp));
+            rsp.attr_value.handle = param->read.handle;
+            rsp.attr_value.len = n;
+            if (n > sizeof(rsp.attr_value.value)) n = sizeof(rsp.attr_value.value);
+            memcpy(rsp.attr_value.value, p, n);
+
+            esp_ble_gatts_send_response(gatts_if, param->read.conn_id,
+                                        param->read.trans_id, ESP_GATT_OK, &rsp);
         }
-        break;
+    break;
 
     case ESP_GATTS_CONNECT_EVT:
         g_conn_id = param->connect.conn_id;

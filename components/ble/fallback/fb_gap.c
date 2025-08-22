@@ -58,7 +58,7 @@ void fb_watchdog_stop(void) {
 }
 
 /* Bit flags for adv/scn payload config */
-#define ADV_CFG_FLAG      (1 << 0)
+#define ADV_CFG_FLAG (1 << 0)
 #define SCAN_RSP_CFG_FLAG (1 << 1)
 
 /* GAP callback (registered from fb_core.c) */
@@ -68,12 +68,13 @@ void fb_gap_evt(esp_gap_ble_cb_event_t ev, esp_ble_gap_cb_param_t *p) {
         if (p->adv_data_cmpl.status == ESP_BT_STATUS_SUCCESS) {
             s_adv_cfg_done |= ADV_CFG_FLAG;
             ESP_LOGI(TAG, "ADV payload configured.");
-            ESP_LOGI(TAG, "ADV UUID128 (LSB->MSB): "
-                  "%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-                  s_adv_uuid[0], s_adv_uuid[1], s_adv_uuid[2], s_adv_uuid[3],
-                  s_adv_uuid[4], s_adv_uuid[5], s_adv_uuid[6], s_adv_uuid[7],
-                  s_adv_uuid[8], s_adv_uuid[9], s_adv_uuid[10], s_adv_uuid[11],
-                  s_adv_uuid[12], s_adv_uuid[13], s_adv_uuid[14], s_adv_uuid[15]);
+            // Uncomment for debugging UUID in ADV payload.
+            // ESP_LOGI(TAG, "ADV UUID128 (LSB->MSB): "
+            //       "%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+            //       s_adv_uuid[0], s_adv_uuid[1], s_adv_uuid[2], s_adv_uuid[3],
+            //       s_adv_uuid[4], s_adv_uuid[5], s_adv_uuid[6], s_adv_uuid[7],
+            //       s_adv_uuid[8], s_adv_uuid[9], s_adv_uuid[10], s_adv_uuid[11],
+            //       s_adv_uuid[12], s_adv_uuid[13], s_adv_uuid[14], s_adv_uuid[15]);
         } else {
             ESP_LOGE(TAG, "ADV payload config failed: %d", p->adv_data_cmpl.status);
         }

@@ -6,7 +6,8 @@
 # ESP32 (LoPy4) – Wi-Fi + BLE Remote Control
 
 Tiny control plane for ESP32. **TCP over Wi-Fi when up**, **BLE lifeboat when not**.
-Plain-text commands, OTA over TCP (with **BLE-OTA** as the last outpost), alerts, and rollback that actually behaves.
+Plain-text commands, OTA over TCP (with **BLE-OTA** as the last outpost), alerts, rollback that actually behaves,
+and now a **DHT sensor that sometimes works and sometimes throws `NA` in your face**.
 
 ---
 
@@ -17,6 +18,7 @@ Plain-text commands, OTA over TCP (with **BLE-OTA** as the last outpost), alerts
 * **BLE fallback** GATT: RX (write cmds), TX (status), WIFI (`<ssid>\n<pwd>`), ERRSRC, ALERT, **BLE-OTA** (CTRL/DATA).
 * **Same replies on both paths** (BLE mirrors TCP).
 * **Event-driven health + rollback**.
+* **DHT sensor readings** – either stream them or demand.
 
 ---
 
@@ -44,6 +46,10 @@ Plain-text commands, OTA over TCP (with **BLE-OTA** as the last outpost), alerts
 | `settoken <newtoken>`          |   ✓  | `OK` on success                                     |
 | `errsrc`                       |   –  | e.g. `mode=NORMAL errsrc=0 NONE`                    |
 | `OTA <size> <crc32>` + payload |   ✓  | `ACK` → `OK` or error; reboots                      |
+| `dht?`                         |   –  | One-shot DHT read or `DHT NA` if the bastard fails  |
+| `dhtstream on <ms>`            |   –  | Start periodic DHT stream (`DHTSTREAM ON`)          |
+| `dhtstream off`                |   –  | Kill the stream (`DHTSTREAM OFF`)                   |
+| `dhtstate`                     |   –  | Show stream state/interval/valid flag/sample age    |
 
 > Commands are case-literal for now.
 
@@ -62,11 +68,22 @@ Plain-text commands, OTA over TCP (with **BLE-OTA** as the last outpost), alerts
 | `efbe0500` | Notify/Read     | **ALERT** — `ALERT seq=<n> code=<id> <detail>`                                   |
 | `efbe0600` | Write (w/resp)  | **BLE-OTA CTRL** — `"BL_OTA START <size> <crc32>"`, `"BL_OTA FINISH"`, `"ABORT"` |
 | `efbe0700` | Write (no resp) | **BLE-OTA DATA** — `<seq:le32><len:le16><payload...>`                            |
+| `efbe0800` | Notify/Read     | **DHT** — temperature + humidity values (or `DHT NA`)                            |
 
 **BLE-OTA**: `START` → stream DATA frames → optional `FINISH`.
 If the last DATA completes the image, the device **finalizes and reboots** (FINISH optional).
 If BLE drops after full image, it still **finalizes on disconnect**.
 *(You can gate BLE-OTA to RECOVERY mode in firmware.)*
+
+---
+
+## DHT sensor (temperature + humidity)
+
+* Background sampler task — sensor polled at safe intervals (≥2s or it sulks).
+* `dht?` → one-shot read.
+* `dhtstream on <ms>` → start periodic reads.
+* `dhtstate` → see if it’s streaming, how old the value is, and whether it’s valid.
+* Values mirrored to BLE (UUID `efbe0800-…`).
 
 ---
 
@@ -79,7 +96,7 @@ app/
   cli.py               # entry point
   session.py           # interactive loop + keepalive + reconnection
   tcp_client.py        # connect/auth, send_line, keepalive
-  ble_fallback.py      # scan/connect, RX/TX/ERRSRC/ALERT/SETWIFI, BLE-OTA
+  ble_fallback.py      # scan/connect, RX/TX/ERRSRC/ALERT/SETWIFI, BLE-OTA, DHT
   ota.py               # OTA over TCP + BLE upload
   utils.py             # helpers (UUID prefix resolve, Wi-Fi-OK parser, etc.)
 ```
@@ -103,7 +120,7 @@ LOPY_BLE_ADDR, LOPY_BLE_NAMES   # MAC wins; names are fallback.
 
 ## Build + flash
 
-ESP-IDF v5.x (fine on v6 dev too). Target: LoPy4 (ESP32).
+ESP-IDF v5.x (works on v6 dev too). Target: LoPy4 (ESP32).
 
 ```bash
 idf.py set-target esp32
@@ -125,9 +142,9 @@ spiffs  @ 0x620000  (~2M)
 ## Architecture (super short)
 
 ```
-Wi-Fi STA ─► TCP:8080 ─► command parser ─► bus ─► modules (LED, OTA, alerts, …)
+Wi-Fi STA ─► TCP:8080 ─► command parser ─► bus ─► modules (LED, OTA, alerts, DHT, …)
                  ▲
-BLE lifeboat ────┘ (RX/TX mirror + WIFI cred write + ERRSRC/ALERT + BLE-OTA)
+BLE lifeboat ────┘ (RX/TX mirror + WIFI cred write + ERRSRC/ALERT + BLE-OTA + DHT)
 ```
 
 ---
@@ -141,3 +158,4 @@ BLE lifeboat ────┘ (RX/TX mirror + WIFI cred write + ERRSRC/ALERT + BL
 ---
 
 ## To be continued…
+

@@ -2,8 +2,8 @@ import os
 import pathlib
 
 # ---------- Config ----------
-ADDR = os.getenv("LOPY_ADDR", "192.168.10.125")
-PORT = int(os.getenv("LOPY_PORT", "8080"))
+ADDR   = os.getenv("LOPY_ADDR", "192.168.10.125")
+PORT   = int(os.getenv("LOPY_PORT", "8080"))
 TOKEN  = os.getenv("LOPY_TOKEN", "baker")
 DEBUG_BLE = True if os.getenv("LOPY_DEBUG_BLE", "1").strip() not in ("0","false","False") else False
 
@@ -24,8 +24,8 @@ ERR_PREFIX = "efbe0400"
 ALERT_PREFIX = "efbe0500"
 OTA_CTRL_PREFIX = "efbe0600"
 OTA_DATA_PREFIX = "efbe0700"
-DHT_PREFIX = "efbe0800-"
-DHT_SUFFIX = "efbe0800"   # fallback match
+#DHT_UUID = "efbe0800-fbfb-fbfb-fb4b-494545434956"
+DHT_PREFIX = "efbe0800"
 # BLE identity.
 BLE_ADV_NAMES = [n.strip() for n in os.getenv("LOPY_BLE_NAMES", "LoPy4").split(",") if n.strip()]
 BLE_ADDR = (os.getenv("LOPY_BLE_ADDR", "") or "").replace("-", ":").upper()

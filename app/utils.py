@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 def is_wifi_ok(msg: str) -> bool:
     m = (msg or "").strip().lower()
-    if m == "none":  # ignore bare ERRSRC “NONE” unless caller opens grace window.
+    if m == "none":  # ignore bare ERRSRC “NONE” unless caller opens grace window
         return False
     m = " ".join(m.split())
     return (
@@ -25,17 +25,6 @@ async def stop_notify_quiet(client, *uuids):
             pass
         except Exception:
             pass
-def resolve_by_suffix(services, suffix: str):
-    suf = (suffix or "").lower()
-    try:
-        for s in services or []:
-            for c in (getattr(s, "characteristics", []) or []):
-                u = str(getattr(c, "uuid", "")).lower()
-                if u.endswith(suf):
-                    return str(c.uuid)
-    except Exception:
-        pass
-    return None
 
 def resolve_by_prefix(services, prefixes) -> Tuple[Optional[str], ...]:
     """Return UUIDs by given prefix order. prefixes = [RX, TX, WIFI, ERRSRC, ALERT, OTA_CTRL, OTA_DATA]"""
@@ -85,19 +74,3 @@ def readline_nonblock_posix(slice_sec: float = 0.2) -> Optional[str]:
         line = sys.stdin.readline()
         return line.rstrip("\r\n")
     return None
-def parse_dht_line(msg: str):
-    """
-    Parse lines like: 'DHT T=23.4C RH=47.1%'.
-    Returns (temp_c: float|None, rh: float|None) or (None, None) on mismatch.
-    """
-    try:
-        m = msg.strip()
-        if not m.lower().startswith("dht "):
-            return (None, None)
-        # Very permissive parse
-        import re
-        t = re.search(r"[tT]\s*=\s*([+-]?\d+(?:\.\d+)?)\s*[cC]", m)
-        h = re.search(r"[rR][hH]\s*=\s*([+-]?\d+(?:\.\d+)?)\s*%", m)
-        return (float(t.group(1)) if t else None, float(h.group(1)) if h else None)
-    except Exception:
-        return (None, None)
